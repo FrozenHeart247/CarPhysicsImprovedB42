@@ -1,0 +1,5 @@
+name=Roadcraft Dynamics
+id=RoadcraftDynamicsB42
+author=Project contributors
+require=\ZombieBuddy
+description=Independent Build 42 vehicle-dynamics rewrite loaded through ZombieBuddy.

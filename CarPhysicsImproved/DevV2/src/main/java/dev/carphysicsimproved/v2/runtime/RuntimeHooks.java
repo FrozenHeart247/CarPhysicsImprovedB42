@@ -74,6 +74,11 @@ public final class RuntimeHooks {
 
             double delta = current.deltaSeconds();
             runtime.activeAgeSeconds += delta;
+            boolean vanillaCollisionWindow = CarPhysicsImprovedMod.vanillaCollisionResponse()
+                    && runtime.vanillaCollisionSecondsRemaining > 0.0;
+            runtime.vanillaCollisionSecondsRemaining = Math.max(
+                    0.0,
+                    runtime.vanillaCollisionSecondsRemaining - delta);
             runtime.conditionTimer -= delta;
             if (runtime.conditionTimer <= 0.0) {
                 runtime.condition = current.condition(vehicle, runtime.snapshot);
@@ -174,13 +179,14 @@ public final class RuntimeHooks {
                     controls.steering(),
                     manual ? TransmissionMode.MANUAL : TransmissionMode.AUTOMATIC,
                     directionRequest,
-                    current.surfaceGrip(vehicle));
+                    current.surfaceGrip(vehicle) * CarPhysicsImprovedMod.tireGripMultiplier());
             DynamicsOutput output = VehicleDynamics.step(
                     runtime.specification,
                     runtime.dynamics,
                     input,
                     motion,
                     runtime.condition,
+                    CarPhysicsImprovedMod.physicsTuning(),
                     delta);
             runtime.dynamics = output.state();
             runtime.lastOutput = output;
@@ -218,6 +224,33 @@ public final class RuntimeHooks {
             double longCommand = clamp(output.longitudinalForceN(), -longLimit, longLimit);
             double latCommand = clamp(output.lateralForceN(), -lateralLimit, lateralLimit);
             double yawCommand = clamp(output.yawTorqueNm(), -torqueLimit, torqueLimit);
+            boolean intentionalSlide = controls.handbrake()
+                    || output.drifting()
+                    || output.state().driftIntentSeconds()
+                            >= CarPhysicsImprovedMod.physicsTuning().driftEntryDelaySeconds();
+            StabilityRecovery recovery = recoverUnintendedSlide(
+                    motion.longitudinalSpeedMps(),
+                    motion.lateralSpeedMps(),
+                    yawRate,
+                    effectiveMass,
+                    runtime.specification.chassis().wheelbaseMeters(),
+                    intentionalSlide,
+                    CarPhysicsImprovedMod.recoveryStrengthMultiplier(),
+                    latCommand,
+                    yawCommand);
+            latCommand = recovery.lateralCommandN();
+            yawCommand = recovery.yawCommandNm();
+
+            // BaseVehicle.crash and Bullet keep complete ownership of the
+            // collision. During this short post-impact window, retain the
+            // CarController command that already ran and do not layer V2 body
+            // forces or emergency recovery over the native response.
+            if (vanillaCollisionWindow) {
+                longCommand = 0.0;
+                latCommand = 0.0;
+                yawCommand = 0.0;
+                recovery = new StabilityRecovery(0.0, 0.0, 0.0);
+            }
 
             boolean parkedIdle = Math.hypot(
                     motion.longitudinalSpeedMps(), motion.lateralSpeedMps()) < 0.35
@@ -230,8 +263,10 @@ public final class RuntimeHooks {
                 yawCommand = 0.0;
             }
 
-            current.overrideController(controller, vehicle, output.state().steeringAngleRadians());
-            current.applyBodyForces(vehicle, sample, longCommand, latCommand, yawCommand);
+            if (!vanillaCollisionWindow) {
+                current.overrideController(controller, vehicle, output.state().steeringAngleRadians());
+                current.applyBodyForces(vehicle, sample, longCommand, latCommand, yawCommand);
+            }
 
             runtime.lastLongCommand = longCommand;
             runtime.lastLatCommand = latCommand;
@@ -260,6 +295,9 @@ public final class RuntimeHooks {
                         + " long=" + Math.round(output.longitudinalForceN())
                         + " cmd=" + Math.round(longCommand)
                         + " payload=" + Math.round(runtime.condition.sanitizedPayloadKg())
+                        + " engineCond=" + round(runtime.condition.sanitizedEngineCondition(), 2)
+                        + " brakeCond=" + round(runtime.condition.sanitizedBrakesCondition(), 2)
+                        + " suspCond=" + round(runtime.condition.sanitizedSuspensionCondition(), 2)
                         + " grade=" + round(sample.roadGradeRadians(), 3)
                         + " slip=" + round(output.wheelSlipMps(), 2)
                         + " driftIntent=" + round(output.state().driftIntentSeconds(), 2)
@@ -268,6 +306,9 @@ public final class RuntimeHooks {
                         + " yawRate=" + round(yawRate, 3)
                         + " lat=" + Math.round(latCommand)
                         + " yaw=" + Math.round(yawCommand)
+                        + " recovery=" + round(recovery.amount(), 2)
+                        + " collision=" + (vanillaCollisionWindow ? "vanilla" : "v2")
+                        + " impact=" + round(runtime.lastCollisionImpact, 1)
                         + " nativeGear=" + gearName(nativeGear)
                         + " mirrored=" + gearMirrored
                         + " tireGrip=" + round(output.frontTireGripMultiplier(), 2)
@@ -297,7 +338,9 @@ public final class RuntimeHooks {
                     Object vehicle = entry.getKey();
                     RuntimeState runtime = entry.getValue();
                     if (vehicle == null || runtime == null || runtime.lastOutput == null
-                            || !current.hasAuthority(vehicle)) {
+                            || !current.hasAuthority(vehicle)
+                            || (CarPhysicsImprovedMod.vanillaCollisionResponse()
+                                    && runtime.vanillaCollisionSecondsRemaining > 0.0)) {
                         continue;
                     }
                     current.applyWheelSlip(
@@ -313,6 +356,37 @@ public final class RuntimeHooks {
         } catch (Throwable error) {
             fail("wheel-physics", error);
         }
+    }
+
+    /** Receives BaseVehicle.crash as an observation only; the vanilla method still executes. */
+    public static void onVehicleCrash(Object vehicle, float impactDelta) {
+        if (vehicle == null || !CarPhysicsImprovedMod.enabled()
+                || !CarPhysicsImprovedMod.vanillaCollisionResponse()) {
+            return;
+        }
+        PzRuntimeAccess current = access();
+        if (current == null) {
+            return;
+        }
+        try {
+            // Ignore remote/client-observed and dedicated-server crashes. The
+            // local physics owner is the only runtime that can submit commands.
+            if (!current.hasAuthority(vehicle)) {
+                return;
+            }
+            RuntimeState runtime = VEHICLES.computeIfAbsent(vehicle, ignored -> new RuntimeState());
+            runtime.vanillaCollisionSecondsRemaining = Math.max(
+                    runtime.vanillaCollisionSecondsRemaining,
+                    collisionGraceSeconds(impactDelta));
+            runtime.lastCollisionImpact = Math.abs(Double.isFinite(impactDelta) ? impactDelta : 0.0);
+        } catch (Throwable error) {
+            fail("collision-observer", error);
+        }
+    }
+
+    static double collisionGraceSeconds(double impactDelta) {
+        double severity = clamp(Math.abs(impactDelta), 0.0, 30.0) / 30.0;
+        return 0.30 + smoothStep(severity) * 0.30;
     }
 
     private static PzRuntimeAccess access() {
@@ -377,6 +451,80 @@ public final class RuntimeHooks {
         return gear;
     }
 
+    static StabilityRecovery recoverUnintendedSlide(
+            double longitudinalSpeed,
+            double lateralSpeed,
+            double yawRate,
+            double effectiveMass,
+            double wheelbase,
+            boolean intentionalSlide,
+            double recoveryStrength,
+            double lateralCommand,
+            double yawCommand) {
+        double speed = Math.abs(Double.isFinite(longitudinalSpeed) ? longitudinalSpeed : 0.0);
+        double side = Double.isFinite(lateralSpeed) ? lateralSpeed : 0.0;
+        double yaw = Double.isFinite(yawRate) ? yawRate : 0.0;
+        double mass = clamp(effectiveMass, 100.0, 20_000.0);
+        double base = clamp(wheelbase, 1.2, 8.0);
+        if (intentionalSlide || speed < 3.0) {
+            return new StabilityRecovery(lateralCommand, yawCommand, 0.0);
+        }
+
+        // This guard is deliberately outside the normal tire model. It stays
+        // inactive throughout ordinary steering and only catches motion that
+        // has already exceeded a plausible road-car yaw/sideslip envelope.
+        // Existing 0.1.9 steering forces therefore remain byte-for-byte intact
+        // until an unintended spin is actually developing.
+        double safeYawRate = clamp(8.0 / Math.max(speed, 4.0), 0.75, 1.80);
+        double safeLateralSpeed = Math.max(2.0, speed * 0.14);
+        double yawExcess = clamp(
+                (Math.abs(yaw) - safeYawRate) / Math.max(0.60, safeYawRate), 0.0, 1.0);
+        double sideExcess = clamp(
+                (Math.abs(side) - safeLateralSpeed) / Math.max(1.0, safeLateralSpeed * 0.75), 0.0, 1.0);
+        double amount = smoothStep(Math.max(yawExcess, sideExcess))
+                * clamp(recoveryStrength, 0.0, 1.50);
+        amount = clamp(amount, 0.0, 1.0);
+        if (amount <= 0.0) {
+            return new StabilityRecovery(lateralCommand, yawCommand, 0.0);
+        }
+
+        double normalForce = mass * 9.80665;
+        double recoveryLateral = clamp(-side * mass * 1.8, -normalForce * 0.42, normalForce * 0.42);
+        // PZ/Bullet's Y torque uses the opposite sign to the heading delta
+        // measured by this adapter. Matching the measured yaw sign here applies
+        // damping, but only inside this emergency branch; normal steering keeps
+        // the proven 0.1.9 convention.
+        double recoveryYaw = clamp(
+                yaw * mass * base * base * 1.10,
+                -normalForce * base * 0.16,
+                normalForce * base * 0.16);
+        return new StabilityRecovery(
+                lerp(lateralCommand, recoveryLateral, amount),
+                lerp(yawCommand, recoveryYaw, amount),
+                amount);
+    }
+
+    static StabilityRecovery recoverUnintendedSlide(
+            double longitudinalSpeed,
+            double lateralSpeed,
+            double yawRate,
+            double effectiveMass,
+            double wheelbase,
+            boolean intentionalSlide,
+            double lateralCommand,
+            double yawCommand) {
+        return recoverUnintendedSlide(
+                longitudinalSpeed,
+                lateralSpeed,
+                yawRate,
+                effectiveMass,
+                wheelbase,
+                intentionalSlide,
+                1.0,
+                lateralCommand,
+                yawCommand);
+    }
+
     private static int normalizeManualGear(int gear, int gearCount) {
         if (gear < 0) {
             return -1;
@@ -422,6 +570,15 @@ public final class RuntimeHooks {
         return Math.max(minimum, Math.min(maximum, value));
     }
 
+    private static double smoothStep(double value) {
+        double clamped = clamp(value, 0.0, 1.0);
+        return clamped * clamped * (3.0 - 2.0 * clamped);
+    }
+
+    private static double lerp(double a, double b, double amount) {
+        return a + (b - a) * amount;
+    }
+
     private static double round(double value, int decimals) {
         double scale = Math.pow(10.0, decimals);
         return Math.rint(value * scale) / scale;
@@ -445,7 +602,12 @@ public final class RuntimeHooks {
         private double lastLongCommand;
         private double lastLatCommand;
         private double lastYawCommand;
+        private double vanillaCollisionSecondsRemaining;
+        private double lastCollisionImpact;
         private double lastDelta = 1.0 / 60.0;
         private long lastTelemetryNanos;
+    }
+
+    record StabilityRecovery(double lateralCommandN, double yawCommandNm, double amount) {
     }
 }

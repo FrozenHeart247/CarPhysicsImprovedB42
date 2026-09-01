@@ -2,6 +2,7 @@ package pzmod.carphysicsimproved;
 
 import dev.carphysicsimproved.v2.BuildInfo;
 import dev.carphysicsimproved.v2.physics.DriveLayout;
+import dev.carphysicsimproved.v2.physics.PhysicsTuning;
 import me.zed_0xff.zombie_buddy.Exposer;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -16,6 +17,10 @@ public final class CarPhysicsImprovedMod {
     private static volatile boolean enabled = true;
     private static volatile boolean manualMode;
     private static volatile boolean telemetry;
+    private static volatile boolean vanillaCollisionResponse = true;
+    private static volatile double tireGripMultiplier = 1.0;
+    private static volatile double recoveryStrengthMultiplier = 1.0;
+    private static volatile PhysicsTuning physicsTuning = PhysicsTuning.defaults();
     private static volatile String status = "loaded; waiting for a locally controlled vehicle";
 
     public CarPhysicsImprovedMod() {
@@ -31,6 +36,25 @@ public final class CarPhysicsImprovedMod {
 
     public static void setTelemetry(boolean value) {
         telemetry = value;
+    }
+
+    /** Applies the server/saved-game Sandbox configuration as one atomic profile. */
+    public static void setPhysicsTuning(
+            double enginePowerMultiplier,
+            double roadResistanceMultiplier,
+            double requestedTireGripMultiplier,
+            double requestedRecoveryStrengthMultiplier,
+            double steeringSensitivityMultiplier,
+            double driftEntryDelaySeconds,
+            boolean useVanillaCollisionResponse) {
+        physicsTuning = new PhysicsTuning(
+                enginePowerMultiplier,
+                roadResistanceMultiplier,
+                steeringSensitivityMultiplier,
+                driftEntryDelaySeconds);
+        tireGripMultiplier = clamp(requestedTireGripMultiplier, 0.50, 1.50);
+        recoveryStrengthMultiplier = clamp(requestedRecoveryStrengthMultiplier, 0.0, 1.50);
+        vanillaCollisionResponse = useVanillaCollisionResponse;
     }
 
     public static void requestShiftFor(int vehicleId, int direction) {
@@ -73,6 +97,22 @@ public final class CarPhysicsImprovedMod {
         return telemetry;
     }
 
+    public static PhysicsTuning physicsTuning() {
+        return physicsTuning;
+    }
+
+    public static double tireGripMultiplier() {
+        return tireGripMultiplier;
+    }
+
+    public static double recoveryStrengthMultiplier() {
+        return recoveryStrengthMultiplier;
+    }
+
+    public static boolean vanillaCollisionResponse() {
+        return vanillaCollisionResponse;
+    }
+
     public static int consumeShiftRequest(int vehicleId) {
         Integer request = SHIFT_REQUESTS.remove(vehicleId);
         return request == null ? 0 : Math.max(-1, Math.min(1, request));
@@ -110,5 +150,12 @@ public final class CarPhysicsImprovedMod {
 
     public static String testedGameVersion() {
         return BuildInfo.TESTED_GAME;
+    }
+
+    private static double clamp(double value, double minimum, double maximum) {
+        if (!Double.isFinite(value)) {
+            return 1.0;
+        }
+        return Math.max(minimum, Math.min(maximum, value));
     }
 }

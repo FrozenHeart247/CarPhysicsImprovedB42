@@ -4,7 +4,7 @@ CarPhysicsImproved = CarPhysicsImproved or {}
 local ModJava = CarPhysicsImprovedMod
 CarPhysicsImproved.javaReady = ModJava ~= nil
 
-local options = PZAPI.ModOptions:create("CarPhysicsImprovedB42", "Car Physics Improved")
+local options = PZAPI.ModOptions:create("CarPhysicsImprovedB42", "Car Physics Improved V2")
 if not CarPhysicsImproved.javaReady then
     options:addDescription("Java runtime is unavailable. Approve the JAR in ZombieBuddy and fully restart the game.")
 end
@@ -58,10 +58,32 @@ local function callJava(name, ...)
     return true, result
 end
 
+local function sandboxPercent(name, fallback)
+    local root = SandboxVars and SandboxVars.CarPhysicsImprovedB42
+    local value = root and tonumber(root[name]) or fallback
+    if not value then value = fallback end
+    return value / 100
+end
+
+local function applySandboxOptions()
+    local root = SandboxVars and SandboxVars.CarPhysicsImprovedB42
+    local vanillaCollisions = not root or root.VanillaCollisionResponse ~= false
+    callJava(
+        "setPhysicsTuning",
+        sandboxPercent("EnginePowerPercent", 100),
+        sandboxPercent("RoadResistancePercent", 100),
+        sandboxPercent("TireGripPercent", 100),
+        sandboxPercent("RecoveryStrengthPercent", 100),
+        sandboxPercent("SteeringSensitivityPercent", 100),
+        (root and tonumber(root.DriftEntryDelay)) or 1.5,
+        vanillaCollisions)
+end
+
 local function applyOptions()
     callJava("setEnabled", enabled:getValue())
     callJava("setManualMode", manual:getValue())
     callJava("setTelemetry", telemetry:getValue())
+    applySandboxOptions()
 end
 
 local function loadAndApply()

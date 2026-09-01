@@ -1,0 +1,19 @@
+module Base
+{
+    sound CPI_V1_TireSkid
+    {
+        category = Object,
+        loop = true,
+        is3D = true,
+        master = Ambient,
+        clip
+        {
+            file = media/sound/CPI_V1_SkiddingLoop.wav,
+            distanceMin = 10,
+            distanceMax = 40,
+            reverbMaxRange = 2,
+            reverbFactor = 0.2,
+            volume = 0.75,
+        }
+    }
+}

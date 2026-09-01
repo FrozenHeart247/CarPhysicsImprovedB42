@@ -16,7 +16,7 @@ $liveJar = Join-Path $liveMod '42\media\java\car-physics-improved.jar'
 $stageRoot = Join-Path $devRoot 'build\package-stage'
 $stageMod = Join-Path $stageRoot 'Contents\mods\CarPhysicsImprovedB42'
 $releaseRoot = Join-Path $devRoot 'build\release'
-$release = Join-Path $releaseRoot 'CarPhysicsImprovedB42-0.1.9-dev-workshop.zip'
+$release = Join-Path $releaseRoot 'CarPhysicsImprovedB42-0.1.14-dev-workshop.zip'
 
 function Assert-ChildPath {
     param([string] $Root, [string] $Candidate)
@@ -40,12 +40,17 @@ if ($sourceHash -ne $liveHash) {
     throw 'Staged JAR hash differs from the build output.'
 }
 
-foreach ($target in @($stageRoot, $releaseRoot)) {
-    Assert-ChildPath -Root $devRoot -Candidate $target
-    if (Test-Path -LiteralPath $target) {
-        Remove-Item -LiteralPath $target -Recurse -Force
-    }
-    New-Item -ItemType Directory -Path $target -Force | Out-Null
+Assert-ChildPath -Root $devRoot -Candidate $stageRoot
+if (Test-Path -LiteralPath $stageRoot) {
+    Remove-Item -LiteralPath $stageRoot -Recurse -Force
+}
+New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
+
+Assert-ChildPath -Root $devRoot -Candidate $releaseRoot
+New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
+Assert-ChildPath -Root $devRoot -Candidate $release
+if (Test-Path -LiteralPath $release) {
+    Remove-Item -LiteralPath $release -Force
 }
 
 New-Item -ItemType Directory -Path (Split-Path -Parent $stageMod) -Force | Out-Null

@@ -18,6 +18,11 @@ public final class VehicleDynamicsTest {
         neutralAndStationaryBrakeDoNotDrive(spec);
         manualGearHasARealRevLimit(spec);
         highGearLaunchBogs(spec);
+        lowGearsBuildAccelerationProgressively(spec);
+        sportsGearCurveBoostsLowRatiosAndSoftensTopRatios();
+        reverseSpeedUsesDedicatedEnvelope();
+        sandboxTuningScalesPhysicalInputs(spec);
+        sandboxSteeringAndDriftDefaultsRemainExplicit(spec);
         scriptPerformanceSeparatesVanAndSportsAcceleration();
         engagedHandbrakeBlocksPropulsion(spec);
         healthyStandardVehicleCanBreakTraction(spec);
@@ -109,6 +114,159 @@ public final class VehicleDynamicsTest {
                 VehicleMotion.stopped(), DT);
         check(fifth.rawDriveForceN() < first.rawDriveForceN() * 0.12,
                 "fifth-gear standing start must bog instead of launching like first");
+    }
+
+    private static void lowGearsBuildAccelerationProgressively(VehicleSpec spec) {
+        DriverInput firstGear = new DriverInput(
+                1.0, 0.0, 0.0, 0.0, TransmissionMode.MANUAL, 1, 1.0);
+        DynamicsOutput standing = VehicleDynamics.step(
+                spec,
+                new DynamicsState(1, spec.engine().idleRpm(), 1.0, 0.0, 0.0, 0.0),
+                firstGear,
+                VehicleMotion.stopped(),
+                DT);
+        DynamicsOutput rolling = VehicleDynamics.step(
+                spec,
+                new DynamicsState(1, 3_000.0, 1.0, 0.0, 5.0, 0.0),
+                firstGear,
+                new VehicleMotion(5.0, 0.0, 0.0),
+                DT);
+        check(rolling.propulsionForceLimitN() > standing.propulsionForceLimitN() * 1.15,
+                "first-gear body acceleration must build instead of using one flat vanilla-like cap");
+
+        DynamicsOutput secondLow = VehicleDynamics.step(
+                spec,
+                new DynamicsState(2, 1_800.0, 1.0, 0.0, 7.0, 0.0),
+                new DriverInput(1.0, 0.0, 0.0, 0.0, TransmissionMode.MANUAL, 2, 1.0),
+                new VehicleMotion(7.0, 0.0, 0.0),
+                DT);
+        DynamicsOutput secondHigh = VehicleDynamics.step(
+                spec,
+                new DynamicsState(2, 4_000.0, 1.0, 0.0, 13.0, 0.0),
+                new DriverInput(1.0, 0.0, 0.0, 0.0, TransmissionMode.MANUAL, 2, 1.0),
+                new VehicleMotion(13.0, 0.0, 0.0),
+                DT);
+        check(secondHigh.propulsionForceLimitN() > secondLow.propulsionForceLimitN(),
+                "second gear must recover force as RPM builds after the shift");
+    }
+
+    private static void reverseSpeedUsesDedicatedEnvelope() {
+        VehicleSpec sports = vehicle("Test.SportsReverse", 800.0, 7_000.0, 120.0, 1.4);
+        VehicleSpec utility = vehicle("Test.UtilityReverse", 1_200.0, 3_700.0, 70.0, 1.4);
+        near(VehicleDynamics.reverseSpeedLimitKph(sports), 34.0, 1.0e-9,
+                "sports reverse speed must use the generic upper bound");
+        near(VehicleDynamics.reverseSpeedLimitKph(utility), 22.0, 1.0e-9,
+                "low-speed utility reverse must use the generic lower bound");
+
+        double limitMps = VehicleDynamics.reverseSpeedLimitKph(sports) / 3.6;
+        DynamicsOutput below = VehicleDynamics.step(
+                sports,
+                new DynamicsState(-1, 3_000.0, 1.0, 0.0, -limitMps * 0.50, 0.0),
+                new DriverInput(1.0, 0.0, 0.0, 0.0, TransmissionMode.MANUAL, -1, 1.0),
+                new VehicleMotion(-limitMps * 0.50, 0.0, 0.0),
+                DT);
+        DynamicsOutput atLimit = VehicleDynamics.step(
+                sports,
+                new DynamicsState(-1, 5_000.0, 1.0, 0.0, -limitMps, 0.0),
+                new DriverInput(1.0, 0.0, 0.0, 0.0, TransmissionMode.MANUAL, -1, 1.0),
+                new VehicleMotion(-limitMps, 0.0, 0.0),
+                DT);
+        check(below.propulsionForceLimitN() > sports.massKg() * 1.5,
+                "reverse must retain useful acceleration below its speed envelope");
+        near(atLimit.propulsionForceLimitN(), 0.0, 1.0e-9,
+                "reverse propulsion must fade out at the dedicated limit");
+    }
+
+    private static void sportsGearCurveBoostsLowRatiosAndSoftensTopRatios() {
+        VehicleSpec sports = vehicle("Test.SportsCurve", 800.0, 7_000.0, 190.0, 1.8);
+        DriverInput first = new DriverInput(
+                1.0, 0.0, 0.0, 0.0, TransmissionMode.MANUAL, 1, 1.0);
+        DynamicsOutput standing = VehicleDynamics.step(
+                sports,
+                new DynamicsState(1, sports.engine().idleRpm(), 1.0, 0.0, 0.0, 0.0),
+                first,
+                VehicleMotion.stopped(),
+                DT);
+        DynamicsOutput rolling = VehicleDynamics.step(
+                sports,
+                new DynamicsState(1, 3_200.0, 1.0, 0.0, 5.5, 0.0),
+                first,
+                new VehicleMotion(5.5, 0.0, 0.0),
+                DT);
+        check(standing.propulsionForceLimitN() > rolling.propulsionForceLimitN() * 0.72,
+                "sports first gear must retain the slightly stronger standing launch authority");
+
+        near(VehicleDynamics.highGearDriveScale(1.0, 3, 5), 1.0, 1.0e-9,
+                "middle sports ratios must remain unchanged");
+        near(VehicleDynamics.highGearDriveScale(1.0, 4, 5), 0.96, 1.0e-9,
+                "penultimate sports ratio must be softened slightly");
+        near(VehicleDynamics.highGearDriveScale(1.0, 5, 5), 0.90, 1.0e-9,
+                "top sports ratio must receive the full high-gear reduction");
+        near(VehicleDynamics.highGearDriveScale(0.0, 5, 5), 1.0, 1.0e-9,
+                "non-performance scripts must not inherit the sports top-gear penalty");
+    }
+
+    private static void sandboxTuningScalesPhysicalInputs(VehicleSpec spec) {
+        DriverInput drive = new DriverInput(
+                0.75, 0.0, 0.0, 0.0, TransmissionMode.MANUAL, 3, 1.0);
+        DynamicsState driveState = new DynamicsState(3, 3_000.0, 0.75, 0.0, 15.0, 0.0);
+        VehicleMotion motion = new VehicleMotion(15.0, 0.0, 0.0);
+        DynamicsOutput normal = VehicleDynamics.step(
+                spec, driveState, drive, motion, VehicleCondition.healthy(spec),
+                PhysicsTuning.defaults(), DT);
+        DynamicsOutput powered = VehicleDynamics.step(
+                spec, driveState, drive, motion, VehicleCondition.healthy(spec),
+                new PhysicsTuning(1.20, 1.0), DT);
+        near(powered.rawDriveForceN(), normal.rawDriveForceN() * 1.20, 1.0e-6,
+                "engine-power sandbox tuning must scale wheel torque before traction");
+
+        DriverInput coast = new DriverInput(
+                0.0, 0.0, 0.0, 0.0, TransmissionMode.MANUAL, 3, 1.0);
+        DynamicsState coastState = new DynamicsState(3, 3_000.0, 0.0, 0.0, 15.0, 0.0);
+        DynamicsOutput lowResistance = VehicleDynamics.step(
+                spec, coastState, coast, motion, VehicleCondition.healthy(spec),
+                new PhysicsTuning(1.0, 0.50), DT);
+        DynamicsOutput highResistance = VehicleDynamics.step(
+                spec, coastState, coast, motion, VehicleCondition.healthy(spec),
+                new PhysicsTuning(1.0, 1.50), DT);
+        near(Math.abs(highResistance.resistanceForceN()),
+                Math.abs(lowResistance.resistanceForceN()) * 3.0,
+                1.0e-6,
+                "road-resistance sandbox tuning must scale the complete coast force");
+    }
+
+    private static void sandboxSteeringAndDriftDefaultsRemainExplicit(VehicleSpec spec) {
+        DriverInput turn = new DriverInput(
+                0.0, 0.0, 0.0, 1.0, TransmissionMode.MANUAL, 2, 1.0);
+        VehicleMotion motion = new VehicleMotion(10.0, 0.0, 0.0);
+        DynamicsState normalState = new DynamicsState(2, 2_500.0, 0.0, 0.0, 10.0, 0.0);
+        DynamicsState softState = normalState;
+        DynamicsOutput normal = null;
+        DynamicsOutput soft = null;
+        PhysicsTuning softSteering = new PhysicsTuning(1.0, 1.0, 0.50, 1.50);
+        for (int frame = 0; frame < 120; frame++) {
+            normal = VehicleDynamics.step(
+                    spec, normalState, turn, motion, VehicleCondition.healthy(spec),
+                    PhysicsTuning.defaults(), DT);
+            soft = VehicleDynamics.step(
+                    spec, softState, turn, motion, VehicleCondition.healthy(spec),
+                    softSteering, DT);
+            normalState = normal.state();
+            softState = soft.state();
+        }
+        if (normal == null || soft == null) {
+            throw new AssertionError("steering tuning replay must produce outputs");
+        }
+        check(Math.abs(normal.state().steeringAngleRadians())
+                        > Math.abs(soft.state().steeringAngleRadians()) * 1.90,
+                "steering sandbox scale must alter target wheel angle without changing its default");
+
+        double defaultActivation = VehicleDynamics.powerDriftActivation(
+                1.75, PhysicsTuning.defaults());
+        double delayedActivation = VehicleDynamics.powerDriftActivation(
+                1.75, new PhysicsTuning(1.0, 1.0, 1.0, 2.50));
+        check(defaultActivation > 0.0 && delayedActivation == 0.0,
+                "drift-entry sandbox delay must move the power-drift activation threshold");
     }
 
     private static void scriptPerformanceSeparatesVanAndSportsAcceleration() {

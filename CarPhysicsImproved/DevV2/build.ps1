@@ -65,6 +65,7 @@ $requiredEntries = @(
     'pzmod/carphysicsimproved/Main.class',
     'pzmod/carphysicsimproved/CarPhysicsImprovedMod.class',
     'pzmod/carphysicsimproved/Patch_CarController$Update.class',
+    'pzmod/carphysicsimproved/Patch_BaseVehicle.class',
     'pzmod/carphysicsimproved/Patch_WorldSimulation.class',
     'dev/carphysicsimproved/v2/physics/VehicleDynamics.class'
 )

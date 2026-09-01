@@ -17,6 +17,7 @@ public final class VehicleDynamics {
             DriverInput rawInput,
             VehicleMotion rawMotion,
             VehicleCondition rawCondition,
+            PhysicsTuning rawTuning,
             double rawDeltaSeconds) {
         if (specification == null) {
             throw new IllegalArgumentException("Vehicle specification is required");
@@ -27,6 +28,7 @@ public final class VehicleDynamics {
         VehicleCondition condition = rawCondition == null
                 ? VehicleCondition.healthy(specification)
                 : rawCondition;
+        PhysicsTuning tuning = rawTuning == null ? PhysicsTuning.defaults() : rawTuning;
         double dt = VehicleSpec.clamp(VehicleSpec.finite(rawDeltaSeconds, 1.0 / 60.0), 1.0 / 240.0, 0.05);
 
         int oldGear = normalizeGear(specification, oldState.gear());
@@ -42,14 +44,14 @@ public final class VehicleDynamics {
                 && input.throttle() >= 0.92
                 && Math.abs(input.steering()) >= 0.35
                 && absoluteSpeed >= 3.5;
+        double driftEntryDelay = tuning.driftEntryDelaySeconds();
         double driftIntent = VehicleSpec.clamp(
-                VehicleSpec.finite(oldState.driftIntentSeconds(), 0.0), 0.0, 2.50);
+                VehicleSpec.finite(oldState.driftIntentSeconds(), 0.0), 0.0, 3.50);
         driftIntent = moveTowards(
                 driftIntent,
-                sustainedPowerTurn ? 2.50 : 0.0,
+                sustainedPowerTurn ? driftEntryDelay + 0.50 : 0.0,
                 (sustainedPowerTurn ? 1.0 : 3.0) * dt);
-        double powerDriftActivation = smoothStep(
-                VehicleSpec.clamp((driftIntent - 1.50) / 0.50, 0.0, 1.0));
+        double powerDriftActivation = powerDriftActivation(driftIntent, tuning);
         boolean handbrakeDriftRequest = input.handbrake() >= 0.55
                 && Math.abs(input.steering()) >= 0.15
                 && absoluteSpeed >= 4.0;
@@ -86,7 +88,7 @@ public final class VehicleDynamics {
                 * engineHealth * revLimiter;
         double rawDriveForce = engineTorque * ratio * specification.transmission().finalDrive()
                 * specification.transmission().efficiency() / specification.chassis().wheelRadiusMeters()
-                * clutchCoupling * driveDirection;
+                * clutchCoupling * driveDirection * tuning.enginePowerMultiplier();
         // A fully engaged parking brake disconnects propulsion. Previously it
         // was merely subtracted from engine force, so a sufficiently strong
         // second gear could overpower it and drive away normally.
@@ -115,6 +117,7 @@ public final class VehicleDynamics {
                 + absoluteSpeed * specification.steering().speedSensitivityPerMps()
                 + absoluteSpeed * absoluteSpeed * 0.0040;
         double steeringTarget = input.steering() * specification.steering().maximumAngleRadians()
+                * tuning.steeringSensitivityMultiplier()
                 / steeringDenominator;
         double steeringRate = Math.abs(input.steering()) > 0.001
                 ? specification.steering().inputRateRadiansPerSecond()
@@ -151,6 +154,7 @@ public final class VehicleDynamics {
                         / specification.chassis().wheelRadiusMeters() * clutchCoupling
                 : 0.0;
         resistanceMagnitude += Math.min(engineBrake, effectiveMass * 0.55);
+        resistanceMagnitude *= tuning.roadResistanceMultiplier();
 
         double brakeHealth = 0.28 + 0.72 * condition.sanitizedBrakesCondition();
         double serviceBrake = input.serviceBrake() * normalTotal * 1.05 * brakeHealth;
@@ -171,7 +175,43 @@ public final class VehicleDynamics {
                 baseAccelerationLimit * utilityAssist, 2.35, 5.20);
         // The cap uses unladen script mass, so payload still lowers actual
         // acceleration instead of increasing the allowed propulsion force.
-        double propulsionForceLimit = specification.massKg() * propulsionAccelerationLimit;
+        double basePropulsionForceLimit = specification.massKg() * propulsionAccelerationLimit;
+        int absoluteGear = Math.abs(gear);
+        double performanceBlend = VehicleSpec.clamp((performanceIndex - 0.16) / 0.26, 0.0, 1.0);
+        // The last ratios of high-performance scripts were still pulling like
+        // mid gears. Reduce only the upper ratios, continuously by the same
+        // mass/power-derived index used elsewhere; no vehicle-name classes.
+        double highGearDriveScale = highGearDriveScale(
+                performanceBlend,
+                gear,
+                specification.transmission().gearCount());
+        rawDriveForce *= highGearDriveScale;
+        double lowGearEnvelope = 1.0;
+        if (absoluteGear == 1) {
+            // A flat body-force cap made first gear deliver essentially the
+            // same acceleration from idle to the shift point. Build available
+            // launch force with road speed instead; powerful/light cars get a
+            // softer initial bite while utility vehicles retain more authority.
+            double launchProgress = smoothStep(VehicleSpec.clamp(absoluteSpeed / 5.5, 0.0, 1.0));
+            double standingAuthority = lerp(0.72, 0.73, performanceBlend);
+            lowGearEnvelope = lerp(standingAuthority, 1.0, launchProgress);
+        } else if (absoluteGear == 2) {
+            double normalizedRpm = engineRpm / specification.engine().redlineRpm();
+            double secondGearBuild = smoothStep(
+                    VehicleSpec.clamp((normalizedRpm - 0.22) / 0.38, 0.0, 1.0));
+            lowGearEnvelope = lerp(0.84, 1.0, secondGearBuild)
+                    * (1.0 + 0.04 * performanceBlend);
+        }
+        if (gear < 0) {
+            double reverseLimitMps = reverseSpeedLimitKph(specification) / 3.6;
+            double reverseFade = smoothStep(VehicleSpec.clamp(
+                    (absoluteSpeed - reverseLimitMps * 0.72)
+                            / Math.max(0.5, reverseLimitMps * 0.28),
+                    0.0,
+                    1.0));
+            lowGearEnvelope = 0.82 * (1.0 - reverseFade);
+        }
+        double propulsionForceLimit = basePropulsionForceLimit * lowGearEnvelope;
         double bodyDriveDemand = VehicleSpec.clamp(rawDriveForce, -propulsionForceLimit, propulsionForceLimit);
         // Full wheel-torque demand is retained near launch for burnout and
         // power-oversteer, then blended toward the body-force envelope. This
@@ -179,7 +219,6 @@ public final class VehicleDynamics {
         // throttle press.
         double wheelspinPotential = VehicleSpec.clamp(
                 (performanceIndex - 0.215) / 0.14, 0.0, 1.0);
-        int absoluteGear = Math.abs(gear);
         double gearSlipAuthority = absoluteGear <= 1 ? 1.0
                 : absoluteGear == 2 ? 0.12 + 0.18 * wheelspinPotential
                 : absoluteGear == 3 ? 0.02 + 0.05 * wheelspinPotential
@@ -356,6 +395,23 @@ public final class VehicleDynamics {
             DynamicsState previous,
             DriverInput input,
             VehicleMotion motion,
+            VehicleCondition condition,
+            double deltaSeconds) {
+        return step(
+                specification,
+                previous,
+                input,
+                motion,
+                condition,
+                PhysicsTuning.defaults(),
+                deltaSeconds);
+    }
+
+    public static DynamicsOutput step(
+            VehicleSpec specification,
+            DynamicsState previous,
+            DriverInput input,
+            VehicleMotion motion,
             double deltaSeconds) {
         return step(specification, previous, input, motion, VehicleCondition.healthy(specification), deltaSeconds);
     }
@@ -496,6 +552,32 @@ public final class VehicleDynamics {
             return lerp(0.82, 1.0, (rpm - 0.18) / 0.37);
         }
         return lerp(1.0, 0.68, (rpm - 0.55) / 0.45);
+    }
+
+    static double reverseSpeedLimitKph(VehicleSpec specification) {
+        return VehicleSpec.clamp(specification.maximumSpeedKph() * 0.30, 22.0, 34.0);
+    }
+
+    static double highGearDriveScale(double performanceBlend, int gear, int gearCount) {
+        double performance = VehicleSpec.clamp(performanceBlend, 0.0, 1.0);
+        if (gear <= 0 || gearCount < 4) {
+            return 1.0;
+        }
+        if (gear == gearCount) {
+            return 1.0 - 0.10 * performance;
+        }
+        if (gear == gearCount - 1) {
+            return 1.0 - 0.04 * performance;
+        }
+        return 1.0;
+    }
+
+    static double powerDriftActivation(double driftIntentSeconds, PhysicsTuning tuning) {
+        PhysicsTuning profile = tuning == null ? PhysicsTuning.defaults() : tuning;
+        return smoothStep(VehicleSpec.clamp(
+                (driftIntentSeconds - profile.driftEntryDelaySeconds()) / 0.50,
+                0.0,
+                1.0));
     }
 
     private static int normalizeGear(VehicleSpec spec, int gear) {

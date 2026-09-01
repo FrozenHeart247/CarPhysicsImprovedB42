@@ -1,5 +1,5 @@
 version=1
-title=Roadcraft_Dynamics
-description=Independent Build 42 vehicle dynamics rewrite. Requires ZombieBuddy. The Java runtime is loaded automatically from this Workshop item after ZombieBuddy approval.
+title=Car_Physics_Improved
+description=Two alternative Build 42 vehicle-physics mods in one Workshop item. V1 ports the legacy drivetrain style to ZombieBuddy; V2 is the independent new physics model. Enable only one version at a time.
 tags=Build 42;
 visibility=private

@@ -1,8 +1,8 @@
-name=Car Physics Improved
+name=Car Physics Improved V2
 id=CarPhysicsImprovedB42
 author=Car Physics Improved contributors
 versionMin=42.0
 require=ZombieBuddy
-incompatible=RoadcraftDynamicsB42
-modversion=0.1.9-dev
+incompatible=\CarPhysicsImprovedV1B42;\RoadcraftDynamicsB42
+modversion=0.1.14-dev
 description=Independent Build 42 vehicle-physics V2 with unified transmissions, per-tire condition, weight transfer, steering, drift, understeer, burnout, and generic Workshop-vehicle support.
