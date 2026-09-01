@@ -1,0 +1,5 @@
+version=1
+title=Car_Physics_Improved
+description=Independent Build 42 vehicle-physics V2. Requires ZombieBuddy. Per-tire condition, unified automatic/manual drivetrain, steering, drift, understeer, burnout, and generic Workshop vehicle support.
+tags=Build 42;
+visibility=private
