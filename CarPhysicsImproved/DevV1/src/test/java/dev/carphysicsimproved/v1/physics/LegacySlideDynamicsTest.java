@@ -16,6 +16,8 @@ public final class LegacySlideDynamicsTest {
         steeringTapDoesNotStartSlide();
         sustainedPowerCanStartDrift();
         handbrakeNeedsSpeedAndSteering();
+        releasedDriftRetainsGripBriefly();
+        targetSlipAngleReducesRotationCommand();
         naturalRearGripLossCanStartSlide();
         impactCanBecomeNaturalSlide();
         leftAndRightCommandsAreSymmetric();
@@ -104,6 +106,48 @@ public final class LegacySlideDynamicsTest {
                         && turningOutput.wheelFrictionScale() >= 0.25
                         && turningOutput.wheelFrictionScale() < 0.50,
                 "handbrake drift must temporarily reduce the native wheel-friction budget");
+    }
+
+    private static void releasedDriftRetainsGripBriefly() {
+        LegacySlideDynamics.State state = calibratedState();
+        LegacySlideDynamics.Output output = null;
+        for (int index = 0; index < 5; index++) {
+            output = step(state, ROAD, input(12.0, 0.2, -0.45, 0.12,
+                    0.2, 0.0, 1.0, 2, 0.2, 0.0, 0.3, false));
+        }
+        check(output != null && output.driftGripActive(),
+                "an initiated drift must enter its reduced-grip phase");
+
+        LegacySlideDynamics.Output firstReleased = step(state, ROAD, input(12.0, 0.2, -0.45, 0.0,
+                0.0, 0.0, 0.0, 2, 0.0, 0.0, 0.2, false));
+        check(!firstReleased.intentionalSlide() && firstReleased.driftGripActive()
+                        && firstReleased.wheelFrictionScale() < 1.0,
+                "releasing the drift input must not restore full wheel grip in one physics frame");
+
+        LegacySlideDynamics.Output settled = firstReleased;
+        for (int index = 0; index < 10; index++) {
+            settled = step(state, ROAD, input(12.0, 0.0, -0.10, 0.0,
+                    0.0, 0.0, 0.0, 2, 0.0, 0.0, 0.0, false));
+        }
+        check(!settled.driftGripActive() && settled.wheelFrictionScale() == 1.0,
+                "the short drift-grip hold must expire and restore native wheel friction");
+    }
+
+    private static void targetSlipAngleReducesRotationCommand() {
+        LegacySlideDynamics.State shallowState = calibratedState();
+        LegacySlideDynamics.State targetState = calibratedState();
+        LegacySlideDynamics.Output shallow = null;
+        LegacySlideDynamics.Output nearTarget = null;
+        double targetLateralSpeed = Math.tan(Math.toRadians(15.5)) * 12.0;
+        for (int index = 0; index < 7; index++) {
+            shallow = step(shallowState, ROAD, input(12.0, 0.2, -0.45, 0.12,
+                    0.2, 0.0, 1.0, 2, 0.2, 0.0, 0.3, false));
+            nearTarget = step(targetState, ROAD, input(12.0, targetLateralSpeed, -0.45, 0.12,
+                    0.2, 0.0, 1.0, 2, 0.2, 0.0, 0.3, false));
+        }
+        check(shallow != null && nearTarget != null
+                        && Math.abs(nearTarget.bulletYawTorque()) < Math.abs(shallow.bulletYawTorque()),
+                "rotation assistance must taper as the car approaches its target slip angle");
     }
 
     private static void naturalRearGripLossCanStartSlide() {

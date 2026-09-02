@@ -143,7 +143,7 @@ public final class LegacyHooks {
                 slideOutput = LegacySlideDynamics.Output.inactive();
             }
             current.applyWheelFrictionScale(vehicle, slideOutput.wheelFrictionScale());
-            double driftSteeringMultiplier = slideOutput.intentionalSlide() ? 1.40 : 1.0;
+            double driftSteeringMultiplier = slideOutput.driftGripActive() ? 1.40 : 1.0;
             double appliedSteering = clamp(
                     output.steeringRadians() * driftSteeringMultiplier,
                     -snapshot.spec().steeringClampRadians(),
