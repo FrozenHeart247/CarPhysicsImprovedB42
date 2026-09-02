@@ -14,6 +14,7 @@ public final class LegacyPhysics {
     public static Output step(Spec spec, Conditions conditions, Settings settings, Input input, State state,
             double deltaSeconds) {
         double dt = clamp(deltaSeconds, 1.0 / 240.0, 0.05);
+        int previousGear = state.lastStepGear;
         double speedKph = input.longitudinalSpeedMps() * 3.6;
         double absoluteSpeedKph = Math.abs(speedKph);
         boolean forwardPropulsion = input.manualTransmission()
@@ -84,6 +85,17 @@ public final class LegacyPhysics {
         double ratio = ratioFor(spec, gear);
         double wheelInputRpm = absoluteSpeedKph * Math.abs(ratio) * finalDrive;
         double rpm = Math.max(spec.idleRpm, state.engineRpm);
+        if (input.manualTransmission() && input.clutchKickEnabled()
+                && previousGear == 0 && gear != 0) {
+            double rpmMismatch = Math.max(0.0, rpm - Math.max(spec.idleRpm, wheelInputRpm));
+            double mismatch = clamp(rpmMismatch / Math.max(500.0, redline - spec.idleRpm), 0.0, 1.0);
+            double firstRatio = spec.forwardRatios[0];
+            double ratioAuthority = clamp(Math.abs(ratio) / Math.max(0.2, firstRatio), 0.0, 1.0);
+            if (mismatch >= 0.12) {
+                state.clutchKick = Math.max(state.clutchKick,
+                        mismatch * Math.pow(ratioAuthority, 1.25));
+            }
+        }
         if (!input.engineRunning()) {
             rpm = Math.max(0.0, rpm - dt * 1600.0);
         } else if (gear == 0) {
@@ -116,8 +128,34 @@ public final class LegacyPhysics {
 
             rawDriveForce = engineTorque * converter * torqueMultiplier * Math.abs(ratio) * finalDrive * 0.05;
             double tractionLimit = spec.massKg * 2.0 * tireTraction * settings.accelerationTraction();
+            if (state.clutchKick > 0.0) {
+                double clutchForce = baseTorque * Math.abs(ratio) * finalDrive * 0.05
+                        * state.clutchKick * (0.45 + 0.85 * state.throttle);
+                rawDriveForce += clutchForce;
+
+                // A clutch dump is a short wheel-torque overload, not a body-force
+                // multiplier. Demand may exceed available grip, while the force sent
+                // to the vehicle remains clipped below. The excess becomes wheelspin.
+                double wheelTorqueAuthority = clamp(
+                        baseTorque * Math.abs(ratio) * finalDrive * 0.05
+                                / Math.max(1.0, tractionLimit),
+                        0.0, 1.5);
+                double clutchDemandRatio = 0.72 + state.clutchKick
+                        * (0.68 + 0.45 * wheelTorqueAuthority)
+                        * (0.55 + 0.45 * state.throttle);
+                rawDriveForce = Math.max(rawDriveForce, tractionLimit * clutchDemandRatio);
+
+                double clutchTargetRpm = Math.max(spec.idleRpm, wheelInputRpm);
+                rpm = approach(rpm, clutchTargetRpm,
+                        dt * (1_800.0 + state.clutchKick * 4_200.0));
+            }
             driveForce = Math.min(Math.max(0.0, rawDriveForce), tractionLimit);
             burnoutSpeedKph = Math.max(0.0, (rawDriveForce - tractionLimit) * dt * 0.02 - 3.0);
+            if (state.clutchKick > 0.0) {
+                double clutchSlipSpeedKph = Math.max(0.0, rawDriveForce - tractionLimit)
+                        / Math.max(100.0, spec.massKg) * 3.6 * state.clutchKick;
+                burnoutSpeedKph = Math.max(burnoutSpeedKph, clutchSlipSpeedKph);
+            }
             double coupledTarget = Math.max(spec.idleRpm, wheelInputRpm);
             double couplingRate = clamp(converter, 0.0, 1.0) * dt * 9.0;
             rpm = lerp(rpm, coupledTarget, clamp(couplingRate, 0.0, 1.0));
@@ -140,7 +178,10 @@ public final class LegacyPhysics {
                     (settings.reverseSpeedLimitKph() + 5.0 - absoluteSpeedKph) / 5.0, 0.0, 1.0);
         }
 
-        double brakeForce = serviceBrake * spec.brakingForce * (input.handbrake() ? 3.0 : 1.0);
+        boolean movingHandbrakeTurn = input.handbrake()
+                && absoluteSpeedKph >= 14.0 && Math.abs(input.steeringInput()) >= 0.075;
+        double handbrakeMultiplier = movingHandbrakeTurn ? 0.85 : input.handbrake() ? 3.0 : 1.0;
+        double brakeForce = serviceBrake * spec.brakingForce * handbrakeMultiplier;
         if (rawDriveForce < 0.0 && gear != 0) {
             brakeForce += -rawDriveForce / 50.0;
         }
@@ -168,8 +209,11 @@ public final class LegacyPhysics {
         }
         state.engineRpm = clamp(rpm, 0.0, redline + 1200.0);
         state.burnout = burnoutSpeedKph;
+        double clutchKickIntensity = state.clutchKick;
+        state.clutchKick = approach(state.clutchKick, 0.0, dt * 1.6);
+        state.lastStepGear = gear;
         return new Output(gear, driveForce, brakeForce, state.steering, drag, tireTraction,
-                burnoutSpeedKph, state.engineRpm, state.throttle, rawDriveForce);
+                burnoutSpeedKph, state.engineRpm, state.throttle, rawDriveForce, clutchKickIntensity);
     }
 
     private static int automaticGear(Spec spec, State state, double speedKph) {
@@ -259,7 +303,14 @@ public final class LegacyPhysics {
 
     public record Input(double longitudinalSpeedMps, boolean engineRunning, boolean forwardDemand,
             boolean reverseDemand, boolean serviceBrake, boolean handbrake, double steeringInput,
-            double analogThrottle, boolean manualTransmission, int requestedGear) {
+            double analogThrottle, boolean manualTransmission, int requestedGear, boolean clutchKickEnabled) {
+        public Input(double longitudinalSpeedMps, boolean engineRunning, boolean forwardDemand,
+                boolean reverseDemand, boolean serviceBrake, boolean handbrake, double steeringInput,
+                double analogThrottle, boolean manualTransmission, int requestedGear) {
+            this(longitudinalSpeedMps, engineRunning, forwardDemand, reverseDemand,
+                    serviceBrake, handbrake, steeringInput, analogThrottle,
+                    manualTransmission, requestedGear, true);
+        }
     }
 
     public record Settings(double sportTorqueMultiplier, double standardTorqueMultiplier,
@@ -285,10 +336,12 @@ public final class LegacyPhysics {
         public double fullThrottleSeconds;
         public double steering;
         public double burnout;
+        public int lastStepGear = 1;
+        public double clutchKick;
     }
 
     public record Output(int gear, double engineForce, double brakingForce, double steeringRadians,
             double dragMagnitude, double tireTraction, double burnoutSpeedKph, double engineRpm,
-            double throttle, double rawDriveForce) {
+            double throttle, double rawDriveForce, double clutchKickIntensity) {
     }
 }

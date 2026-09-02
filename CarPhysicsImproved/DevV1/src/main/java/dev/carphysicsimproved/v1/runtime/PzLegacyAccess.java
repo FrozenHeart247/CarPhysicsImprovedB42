@@ -1,12 +1,16 @@
 package dev.carphysicsimproved.v1.runtime;
 
 import dev.carphysicsimproved.v1.physics.LegacyPhysics;
+import dev.carphysicsimproved.v1.physics.LegacySlideDynamics;
 import pzmod.carphysicsimproved.v1.CarPhysicsImprovedV1Mod;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.ref.WeakReference;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 /** Reflection boundary for the installed B42.20.4 ABI. */
 final class PzLegacyAccess {
@@ -55,7 +59,12 @@ final class PzLegacyAccess {
     private final Method scriptEngineRpmType;
     private final Method scriptOffroadEfficiency;
     private final Method scriptGearCount;
+    private final Method scriptCenterOfMass;
+    private final Method scriptToBullet;
+    private final Field scriptWheelFriction;
     private final Field wheelId;
+    private final Field wheelFront;
+    private final Method wheelOffset;
     private final Method partItem;
     private final Method partCondition;
     private final Method partContent;
@@ -70,6 +79,7 @@ final class PzLegacyAccess {
 
     private final Method bulletControl;
     private final Method bulletForce;
+    private final Method bulletTorque;
     private final Class<?> transmissionClass;
     private final Class<?> vectorClass;
     private final Field vectorX;
@@ -77,6 +87,7 @@ final class PzLegacyAccess {
     private final Field vectorZ;
     private final Field wheelSkidInfo;
     private final Field wheelRotation;
+    private final Map<Object, ScriptFrictionState> scriptFrictionStates = new WeakHashMap<>();
 
     PzLegacyAccess() throws ReflectiveOperationException {
         ClassLoader loader = Thread.currentThread().getContextClassLoader();
@@ -141,7 +152,12 @@ final class PzLegacyAccess {
         scriptEngineRpmType = method(scriptClass, "getEngineRPMType");
         scriptOffroadEfficiency = method(scriptClass, "getOffroadEfficiency");
         scriptGearCount = method(scriptClass, "getGearRatioCount");
+        scriptCenterOfMass = method(scriptClass, "getCenterOfMassOffset");
+        scriptToBullet = method(scriptClass, "toBullet");
+        scriptWheelFriction = field(scriptClass, "wheelFriction");
         wheelId = field(scriptWheelClass, "id");
+        wheelFront = field(scriptWheelClass, "front");
+        wheelOffset = method(scriptWheelClass, "getOffset");
         partItem = method(partClass, "getInventoryItem");
         partCondition = method(partClass, "getCondition");
         partContent = method(partClass, "getContainerContentAmount");
@@ -156,6 +172,7 @@ final class PzLegacyAccess {
 
         bulletControl = method(bulletClass, "controlVehicle", int.class, float.class, float.class, float.class);
         bulletForce = method(bulletClass, "applyCentralForceToVehicle", int.class, float.class, float.class, float.class);
+        bulletTorque = method(bulletClass, "applyTorqueToVehicle", int.class, float.class, float.class, float.class);
         vectorX = field(vectorClass, "x");
         vectorY = field(vectorClass, "y");
         vectorZ = field(vectorClass, "z");
@@ -208,7 +225,8 @@ final class PzLegacyAccess {
         double shiftRpm = "firebird".equalsIgnoreCase(rpmType) ? 5_800.0 : 4_350.0;
         double maximumSpeed = Math.min(120.0, ((Number) invoke(vehicleMaximumSpeed, vehicle)).doubleValue());
         double steeringClamp = ((Number) invoke(scriptSteeringClamp, script, 0.0f)).doubleValue();
-        return new Snapshot(script, new LegacyPhysics.Spec(
+        int mechanicType = ((Number) invoke(scriptMechanicType, script)).intValue();
+        LegacyPhysics.Spec legacySpec = new LegacyPhysics.Spec(
                 fullType,
                 mass,
                 enginePower,
@@ -221,16 +239,62 @@ final class PzLegacyAccess {
                 ((Number) invoke(vehicleBrakingForce, vehicle)).doubleValue(),
                 steeringClamp,
                 ((Number) invoke(scriptOffroadEfficiency, script)).doubleValue(),
-                ((Number) invoke(scriptMechanicType, script)).intValue()));
+                mechanicType);
+
+        double frontZ = 0.0;
+        double rearZ = 0.0;
+        int frontCount = 0;
+        int rearCount = 0;
+        int wheelCount = Math.max(0, ((Number) invoke(scriptWheelCount, script)).intValue());
+        for (int index = 0; index < wheelCount; index++) {
+            Object wheel = invoke(scriptWheel, script, index);
+            Object offset = invoke(wheelOffset, wheel);
+            double z = vectorZ.getFloat(offset);
+            if (wheelFront.getBoolean(wheel)) {
+                frontZ += z;
+                frontCount++;
+            } else {
+                rearZ += z;
+                rearCount++;
+            }
+        }
+        frontZ = frontCount == 0 ? 1.2 : frontZ / frontCount;
+        rearZ = rearCount == 0 ? -1.2 : rearZ / rearCount;
+        if (frontZ < rearZ) {
+            double temporary = frontZ;
+            frontZ = rearZ;
+            rearZ = temporary;
+        }
+        double wheelbase = clamp(frontZ - rearZ, 1.2, 8.0);
+        Object centerOfMass = invoke(scriptCenterOfMass, script);
+        double centerZ = clamp(vectorZ.getFloat(centerOfMass), rearZ + wheelbase * 0.25,
+                frontZ - wheelbase * 0.25);
+        double frontWeightShare = clamp((centerZ - rearZ) / wheelbase, 0.30, 0.75);
+        double centerHeight = clamp(0.46 + Math.max(0.0, mass - 1_000.0) / 8_000.0, 0.42, 0.90);
+        LegacySlideDynamics.Spec slideSpec = new LegacySlideDynamics.Spec(
+                mass, wheelbase, frontWeightShare, centerHeight, 1.0);
+        return new Snapshot(script, legacySpec, slideSpec);
     }
 
-    LegacyPhysics.Conditions conditions(Object vehicle, Snapshot snapshot) throws ReflectiveOperationException {
+    ConditionSnapshot conditions(Object vehicle, Snapshot snapshot) throws ReflectiveOperationException {
         Object script = snapshot.scriptIdentity;
         int wheelCount = Math.max(0, ((Number) invoke(scriptWheelCount, script)).intValue());
         double pressure = 0.0;
         double condition = 0.0;
+        double frontPressure = 0.0;
+        double rearPressure = 0.0;
+        double frontCondition = 0.0;
+        double rearCondition = 0.0;
+        int frontCount = 0;
+        int rearCount = 0;
         for (int index = 0; index < wheelCount; index++) {
             Object wheel = invoke(scriptWheel, script, index);
+            boolean front = wheelFront.getBoolean(wheel);
+            if (front) {
+                frontCount++;
+            } else {
+                rearCount++;
+            }
             String id = (String) wheelId.get(wheel);
             Object part = invoke(vehiclePart, vehicle, "Tire" + id);
             if (part == null) {
@@ -241,9 +305,18 @@ final class PzLegacyAccess {
                 continue;
             }
             double capacity = Math.max(1.0, ((Number) invoke(partCapacity, part)).doubleValue());
-            pressure += clamp(((Number) invoke(partContent, part)).doubleValue() / capacity, 0.0, 1.35);
-            condition += clamp(((Number) invoke(partCondition, part)).doubleValue(), 0.0, 100.0)
+            double wheelPressure = clamp(((Number) invoke(partContent, part)).doubleValue() / capacity, 0.0, 1.35);
+            double wheelCondition = clamp(((Number) invoke(partCondition, part)).doubleValue(), 0.0, 100.0)
                     * clamp(((Number) invoke(itemWheelFriction, item)).doubleValue(), 0.0, 2.0) * 0.01;
+            pressure += wheelPressure;
+            condition += wheelCondition;
+            if (front) {
+                frontPressure += wheelPressure;
+                frontCondition += wheelCondition;
+            } else {
+                rearPressure += wheelPressure;
+                rearCondition += wheelCondition;
+            }
         }
         if (wheelCount > 0) {
             pressure /= wheelCount;
@@ -252,6 +325,10 @@ final class PzLegacyAccess {
             pressure = 1.0;
             condition = 1.0;
         }
+        frontPressure = frontCount == 0 ? pressure : frontPressure / frontCount;
+        rearPressure = rearCount == 0 ? pressure : rearPressure / rearCount;
+        frontCondition = frontCount == 0 ? condition : frontCondition / frontCount;
+        rearCondition = rearCount == 0 ? condition : rearCondition / rearCount;
 
         boolean offroad = (Boolean) invoke(vehicleOffroad, vehicle);
         boolean forest = (Boolean) invoke(vehicleForest, vehicle);
@@ -275,7 +352,14 @@ final class PzLegacyAccess {
         if (rain > 0.01) {
             grip *= lerp(1.0, CarPhysicsImprovedV1Mod.rainTraction(), rain);
         }
-        return new LegacyPhysics.Conditions(pressure, condition, clamp(grip, 0.1, 1.0), offroad);
+        double surfaceGrip = clamp(grip, 0.1, 1.0);
+        LegacyPhysics.Conditions longitudinal = new LegacyPhysics.Conditions(
+                pressure, condition, surfaceGrip, offroad);
+        double overall = CarPhysicsImprovedV1Mod.settings().overallTraction();
+        LegacySlideDynamics.AxleGrip lateral = new LegacySlideDynamics.AxleGrip(
+                axleGrip(frontPressure, frontCondition, surfaceGrip, overall),
+                axleGrip(rearPressure, rearCondition, surfaceGrip, overall));
+        return new ConditionSnapshot(longitudinal, lateral);
     }
 
     Controls controls(Object controller, Object vehicle) throws ReflectiveOperationException {
@@ -303,7 +387,15 @@ final class PzLegacyAccess {
         double vx = vectorX.getFloat(velocity);
         double vy = vectorY.getFloat(velocity);
         double vz = vectorZ.getFloat(velocity);
-        return new Motion(vx * fx + vz * fz, vx, vy, vz);
+        return new Motion(
+                vx * fx + vz * fz,
+                vx * -fz + vz * fx,
+                Math.atan2(fz, fx),
+                fx,
+                fz,
+                vx,
+                vy,
+                vz);
     }
 
     boolean engineRunning(Object vehicle) throws ReflectiveOperationException {
@@ -329,11 +421,12 @@ final class PzLegacyAccess {
         vehicleTransmissionState.set(vehicle, transmission);
     }
 
-    void apply(Object controller, Object vehicle, LegacyPhysics.Output output, Motion motion, double deltaSeconds)
+    void apply(Object controller, Object vehicle, LegacyPhysics.Output output, Motion motion,
+            double steeringRadians, double deltaSeconds)
             throws ReflectiveOperationException {
         float engine = (float) output.engineForce();
         float braking = (float) output.brakingForce();
-        float steering = (float) output.steeringRadians();
+        float steering = (float) steeringRadians;
         controllerEngineForce.setFloat(controller, engine);
         controllerBrakingForce.setFloat(controller, braking);
         controllerSteering.setFloat(controller, steering);
@@ -350,6 +443,117 @@ final class PzLegacyAccess {
                     (float) (motion.velocityY * drag),
                     (float) (motion.velocityZ * drag));
         }
+    }
+
+    void applySlideForces(Object vehicle, Motion motion, LegacySlideDynamics.Output output)
+            throws ReflectiveOperationException {
+        if (output == null) {
+            return;
+        }
+        double rightX = -motion.forwardZ;
+        double rightZ = motion.forwardX;
+        int id = vehicleId(vehicle);
+        invoke(bulletForce, null, id,
+                (float) (rightX * output.lateralForce()),
+                0.0f,
+                (float) (rightZ * output.lateralForce()));
+        invoke(bulletTorque, null, id, 0.0f, (float) output.bulletYawTorque(), 0.0f);
+    }
+
+    /**
+     * Temporarily lowers the native tire budget for one locally driven vehicle.
+     * VehicleScript is shared by every instance of a type, so ownership is tracked
+     * and the exact value observed before entry is restored on every exit path.
+     */
+    void applyWheelFrictionScale(Object vehicle, double requestedScale) throws ReflectiveOperationException {
+        Object script = script(vehicle);
+        double scale = clamp(requestedScale, 0.25, 1.0);
+        synchronized (scriptFrictionStates) {
+            ScriptFrictionState state = scriptFrictionStates.get(script);
+            if (scale >= 0.999) {
+                if (state != null && state.owner.get() == vehicle) {
+                    restoreScriptFriction(script, state);
+                }
+                return;
+            }
+
+            if (state == null) {
+                state = new ScriptFrictionState(scriptWheelFriction.getFloat(script));
+                scriptFrictionStates.put(script, state);
+            } else {
+                Object owner = state.owner.get();
+                if (state.reduced && owner != null && owner != vehicle) {
+                    restoreScriptFriction(script, state);
+                }
+                if (!state.reduced) {
+                    state.baseValue = scriptWheelFriction.getFloat(script);
+                }
+            }
+
+            float target = (float) (state.baseValue * scale);
+            if (!state.reduced || Math.abs(scriptWheelFriction.getFloat(script) - target) > 1.0E-4f) {
+                scriptWheelFriction.setFloat(script, target);
+                invoke(scriptToBullet, script);
+            }
+            state.owner = new WeakReference<>(vehicle);
+            state.reduced = true;
+        }
+    }
+
+    void restoreWheelFriction(Object vehicle) throws ReflectiveOperationException {
+        Object script = script(vehicle);
+        synchronized (scriptFrictionStates) {
+            ScriptFrictionState state = scriptFrictionStates.get(script);
+            if (state != null && state.owner.get() == vehicle) {
+                restoreScriptFriction(script, state);
+            }
+        }
+    }
+
+    void restoreAllWheelFriction() throws ReflectiveOperationException {
+        synchronized (scriptFrictionStates) {
+            for (Map.Entry<Object, ScriptFrictionState> entry : scriptFrictionStates.entrySet()) {
+                if (entry.getValue().reduced) {
+                    restoreScriptFriction(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+    }
+
+    private void restoreScriptFriction(Object script, ScriptFrictionState state)
+            throws ReflectiveOperationException {
+        if (state.reduced && Math.abs(scriptWheelFriction.getFloat(script) - state.baseValue) > 1.0E-4f) {
+            scriptWheelFriction.setFloat(script, state.baseValue);
+            invoke(scriptToBullet, script);
+        }
+        state.owner = new WeakReference<>(null);
+        state.reduced = false;
+    }
+
+    AxleSkid axleSkid(Object vehicle) throws ReflectiveOperationException {
+        Object script = script(vehicle);
+        Object wheels = vehicleWheelInfo.get(vehicle);
+        int infoCount = wheels == null ? 0 : Array.getLength(wheels);
+        int scriptCount = Math.max(0, ((Number) invoke(scriptWheelCount, script)).intValue());
+        int count = Math.min(infoCount, scriptCount);
+        double front = 0.0;
+        double rear = 0.0;
+        int frontCount = 0;
+        int rearCount = 0;
+        for (int index = 0; index < count; index++) {
+            Object wheel = invoke(scriptWheel, script, index);
+            Object info = Array.get(wheels, index);
+            double amount = clamp((0.70 - wheelSkidInfo.getFloat(info)) / 0.70, 0.0, 1.0);
+            if (wheelFront.getBoolean(wheel)) {
+                front += amount;
+                frontCount++;
+            } else {
+                rear += amount;
+                rearCount++;
+            }
+        }
+        return new AxleSkid(frontCount == 0 ? 0.0 : front / frontCount,
+                rearCount == 0 ? 0.0 : rear / rearCount);
     }
 
     double wheelSkid(Object vehicle) throws IllegalAccessException {
@@ -374,6 +578,35 @@ final class PzLegacyAccess {
             float rotation = wheelRotation.getFloat(wheel);
             wheelRotation.setFloat(wheel, rotation + (float) (burnoutSpeedKph * deltaSeconds * 0.12));
         }
+    }
+
+    void applySlideVisual(Object vehicle, double slideBlend) throws ReflectiveOperationException {
+        if (slideBlend <= 0.02) {
+            return;
+        }
+        Object script = script(vehicle);
+        Object wheels = vehicleWheelInfo.get(vehicle);
+        int infoCount = wheels == null ? 0 : Array.getLength(wheels);
+        int scriptCount = Math.max(0, ((Number) invoke(scriptWheelCount, script)).intValue());
+        int count = Math.min(infoCount, scriptCount);
+        for (int index = 0; index < count; index++) {
+            Object wheel = invoke(scriptWheel, script, index);
+            Object info = Array.get(wheels, index);
+            float target = wheelFront.getBoolean(wheel) ? 0.48f : 0.30f;
+            float blended = (float) lerp(1.0, target, clamp(slideBlend, 0.0, 1.0));
+            wheelSkidInfo.setFloat(info, Math.min(wheelSkidInfo.getFloat(info), blended));
+        }
+    }
+
+    private static double axleGrip(double pressure, double condition, double surfaceGrip, double overallTraction) {
+        if (pressure <= 0.02 || condition <= 0.0) {
+            return 0.08;
+        }
+        double pressureGrip = pressure < 0.85
+                ? lerp(0.52, 1.0, clamp(pressure / 0.85, 0.0, 1.0))
+                : lerp(1.0, 0.84, clamp((pressure - 1.10) / 0.25, 0.0, 1.0));
+        return clamp((0.5 + 0.5 * clamp(condition, 0.0, 1.25))
+                * pressureGrip * surfaceGrip * overallTraction, 0.08, 1.8);
     }
 
     private static Field field(Class<?> owner, String name) throws NoSuchFieldException {
@@ -435,12 +668,30 @@ final class PzLegacyAccess {
         return Math.max(minimum, Math.min(maximum, value));
     }
 
-    record Snapshot(Object scriptIdentity, LegacyPhysics.Spec spec) {
+    record Snapshot(Object scriptIdentity, LegacyPhysics.Spec spec, LegacySlideDynamics.Spec slideSpec) {
+    }
+
+    record ConditionSnapshot(LegacyPhysics.Conditions longitudinal, LegacySlideDynamics.AxleGrip lateral) {
+    }
+
+    record AxleSkid(double front, double rear) {
     }
 
     record Controls(boolean forward, boolean backward, boolean handbrake, double steering, double throttle) {
     }
 
-    record Motion(double longitudinalSpeedMps, double velocityX, double velocityY, double velocityZ) {
+    record Motion(double longitudinalSpeedMps, double lateralSpeedMps, double headingRadians,
+            double forwardX, double forwardZ,
+            double velocityX, double velocityY, double velocityZ) {
+    }
+
+    private static final class ScriptFrictionState {
+        private float baseValue;
+        private WeakReference<Object> owner = new WeakReference<>(null);
+        private boolean reduced;
+
+        private ScriptFrictionState(float baseValue) {
+            this.baseValue = baseValue;
+        }
     }
 }

@@ -89,6 +89,12 @@ local function applyOptions()
         sandboxValue("TractionOffroad", 0.6),
         sandboxValue("TractionRain", 0.7),
         sandboxValue("TractionSnow", 0.4))
+    callJava("configureSlide",
+        sandboxBool("SlideMechanics", true),
+        sandboxValue("DriftIntensity", 1.0),
+        sandboxValue("StabilityAssist", 1.0),
+        sandboxValue("PowerDriftDelay", 0.8),
+        sandboxBool("ClutchKick", true))
     callJava("configureSteering",
         steeringFactorLow:getValue(), steeringFactorHigh:getValue(),
         centeringLow:getValue(), centeringHigh:getValue(),

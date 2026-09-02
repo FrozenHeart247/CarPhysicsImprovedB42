@@ -2,6 +2,7 @@ package pzmod.carphysicsimproved.v1;
 
 import dev.carphysicsimproved.v1.BuildInfo;
 import dev.carphysicsimproved.v1.physics.LegacyPhysics;
+import dev.carphysicsimproved.v1.physics.LegacySlideDynamics;
 import me.zed_0xff.zombie_buddy.Exposer;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -17,6 +18,7 @@ public final class CarPhysicsImprovedV1Mod {
     private static volatile boolean manualTransmission;
     private static volatile boolean telemetry;
     private static volatile LegacyPhysics.Settings settings = LegacyPhysics.Settings.defaults();
+    private static volatile LegacySlideDynamics.Tuning slideTuning = LegacySlideDynamics.Tuning.defaults();
     private static volatile double rainTraction = 0.70;
     private static volatile double snowTraction = 0.40;
     private static volatile double offroadTraction = 0.60;
@@ -100,6 +102,16 @@ public final class CarPhysicsImprovedV1Mod {
                 current.converterLockupRpm(), current.converterLockupRangeRpm());
     }
 
+    public static void configureSlide(boolean enabledValue, double driftIntensity,
+            double stabilityAssist, double powerDriftEntryDelaySeconds, boolean clutchKickEnabled) {
+        slideTuning = new LegacySlideDynamics.Tuning(
+                enabledValue,
+                driftIntensity,
+                stabilityAssist,
+                powerDriftEntryDelaySeconds,
+                clutchKickEnabled);
+    }
+
     public static void configureImpulses(double plant, double zombie, double corpse) {
         plantImpulse = clamp(plant, 0.0, 10.0);
         zombieImpulse = clamp(zombie, 0.0, 10.0);
@@ -178,6 +190,10 @@ public final class CarPhysicsImprovedV1Mod {
 
     public static LegacyPhysics.Settings settings() {
         return settings;
+    }
+
+    public static LegacySlideDynamics.Tuning slideTuning() {
+        return slideTuning;
     }
 
     public static double rainTraction() {

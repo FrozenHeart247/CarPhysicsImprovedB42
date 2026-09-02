@@ -54,6 +54,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "LegacyPhysicsTest failed with exit code $LASTEXITCODE"
 }
 
+& $java '-cp' $testClasses 'dev.carphysicsimproved.v1.physics.LegacySlideDynamicsTest'
+if ($LASTEXITCODE -ne 0) {
+    throw "LegacySlideDynamicsTest failed with exit code $LASTEXITCODE"
+}
+
 $runtimeClasspath = $testClasses + [System.IO.Path]::PathSeparator + $zombieBuddyJar + `
     [System.IO.Path]::PathSeparator + $gameJar
 & $gameJava '-cp' $runtimeClasspath 'dev.carphysicsimproved.v1.runtime.RuntimeAbiSmokeTest'

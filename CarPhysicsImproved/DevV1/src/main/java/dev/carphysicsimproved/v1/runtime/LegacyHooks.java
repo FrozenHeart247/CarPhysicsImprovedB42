@@ -1,6 +1,7 @@
 package dev.carphysicsimproved.v1.runtime;
 
 import dev.carphysicsimproved.v1.physics.LegacyPhysics;
+import dev.carphysicsimproved.v1.physics.LegacySlideDynamics;
 import pzmod.carphysicsimproved.v1.CarPhysicsImprovedV1Mod;
 
 import java.util.Collections;
@@ -20,7 +21,7 @@ public final class LegacyHooks {
     }
 
     public static void afterControllerUpdate(Object controller) {
-        if (controller == null || !CarPhysicsImprovedV1Mod.enabled() || failed) {
+        if (controller == null || failed) {
             return;
         }
         PzLegacyAccess current = access();
@@ -29,7 +30,11 @@ public final class LegacyHooks {
         }
         try {
             Object vehicle = current.vehicle(controller);
-            if (vehicle == null || !current.hasAuthority(vehicle) || !current.hasDriver(vehicle)) {
+            if (vehicle == null || !current.hasAuthority(vehicle)) {
+                return;
+            }
+            if (!CarPhysicsImprovedV1Mod.enabled() || !current.hasDriver(vehicle)) {
+                current.restoreWheelFriction(vehicle);
                 return;
             }
             RuntimeState runtime = VEHICLES.computeIfAbsent(vehicle, ignored -> new RuntimeState());
@@ -41,12 +46,19 @@ public final class LegacyHooks {
                 runtime.physics.engineRpm = Math.max(snapshot.spec().idleRpm(), current.engineRpm(vehicle));
                 int nativeGear = current.currentGear(vehicle);
                 runtime.physics.gear = nativeGear == 0 ? 1 : nativeGear;
+                runtime.physics.lastStepGear = runtime.physics.gear;
+                runtime.slide = new LegacySlideDynamics.State();
                 runtime.conditionTimer = 0.0;
+                runtime.activeAgeSeconds = 0.0;
+                runtime.observerInitialized = false;
             } else {
                 runtime.snapshot = snapshot;
             }
 
             double dt = current.deltaSeconds();
+            runtime.activeAgeSeconds += dt;
+            runtime.collisionCooldownSeconds = Math.max(0.0, runtime.collisionCooldownSeconds - dt);
+            runtime.impactDisturbanceSeconds = Math.max(0.0, runtime.impactDisturbanceSeconds - dt);
             runtime.conditionTimer -= dt;
             if (runtime.conditions == null || runtime.conditionTimer <= 0.0) {
                 runtime.conditions = current.conditions(vehicle, snapshot);
@@ -55,6 +67,9 @@ public final class LegacyHooks {
 
             PzLegacyAccess.Controls controls = current.controls(controller, vehicle);
             PzLegacyAccess.Motion motion = current.motion(vehicle);
+            double yawRate = runtime.observerInitialized
+                    ? wrapAngle(motion.headingRadians() - runtime.lastHeadingRadians) / dt
+                    : 0.0;
             boolean manual = CarPhysicsImprovedV1Mod.manualTransmission();
             if (manual) {
                 int shift = CarPhysicsImprovedV1Mod.consumeShiftRequest(current.vehicleId(vehicle));
@@ -76,14 +91,76 @@ public final class LegacyHooks {
                     controls.steering(),
                     analogThrottle,
                     manual,
-                    requestedGear);
+                    requestedGear,
+                    CarPhysicsImprovedV1Mod.slideTuning().clutchKickEnabled());
             LegacyPhysics.Output output = LegacyPhysics.step(
-                    snapshot.spec(), runtime.conditions, CarPhysicsImprovedV1Mod.settings(), input, runtime.physics, dt);
+                    snapshot.spec(), runtime.conditions.longitudinal(),
+                    CarPhysicsImprovedV1Mod.settings(), input, runtime.physics, dt);
+
+            PzLegacyAccess.AxleSkid nativeAxleSkid = current.axleSkid(vehicle);
+            double tractionLimit = snapshot.spec().massKg() * 2.0 * output.tireTraction()
+                    * CarPhysicsImprovedV1Mod.settings().accelerationTraction();
+            boolean clutchKickStarted = output.clutchKickIntensity() >= 0.05
+                    && runtime.lastClutchKickIntensity < 0.05;
+            if (CarPhysicsImprovedV1Mod.telemetry() && clutchKickStarted) {
+                System.out.println("[CarPhysicsImprovedV1] clutch-kick vehicle=" + snapshot.spec().fullType()
+                        + " gear=" + gearName(output.gear())
+                        + " rpm=" + Math.round(output.engineRpm())
+                        + " intensity=" + round(output.clutchKickIntensity(), 2)
+                        + " force=" + Math.round(output.engineForce())
+                        + "/" + Math.round(output.rawDriveForce())
+                        + " limit=" + Math.round(tractionLimit)
+                        + " wheelspin=" + round(output.burnoutSpeedKph(), 1));
+            }
+            runtime.lastClutchKickIntensity = output.clutchKickIntensity();
+            boolean slideForcesSafe = runtime.activeAgeSeconds >= 0.75
+                    && runtime.collisionCooldownSeconds <= 0.0
+                    && Math.abs(motion.velocityY()) <= 1.25;
+            LegacySlideDynamics.Output slideOutput;
+            if (slideForcesSafe) {
+                slideOutput = LegacySlideDynamics.step(
+                        snapshot.slideSpec(),
+                        runtime.conditions.lateral(),
+                        CarPhysicsImprovedV1Mod.slideTuning(),
+                        new LegacySlideDynamics.Input(
+                                motion.longitudinalSpeedMps(),
+                                motion.lateralSpeedMps(),
+                                yawRate,
+                                output.steeringRadians(),
+                                output.throttle(),
+                                clamp(output.brakingForce() / Math.max(0.1, snapshot.spec().brakingForce()), 0.0, 1.0),
+                                controls.handbrake() ? 1.0 : 0.0,
+                                output.gear(),
+                                output.rawDriveForce(),
+                                tractionLimit,
+                                output.clutchKickIntensity(),
+                                nativeAxleSkid.rear(),
+                                runtime.impactDisturbanceSeconds > 0.0),
+                        runtime.slide,
+                        dt);
+            } else {
+                runtime.slide.reset();
+                slideOutput = LegacySlideDynamics.Output.inactive();
+            }
+            current.applyWheelFrictionScale(vehicle, slideOutput.wheelFrictionScale());
+            double driftSteeringMultiplier = slideOutput.intentionalSlide() ? 1.40 : 1.0;
+            double appliedSteering = clamp(
+                    output.steeringRadians() * driftSteeringMultiplier,
+                    -snapshot.spec().steeringClampRadians(),
+                    snapshot.spec().steeringClampRadians());
             current.setGear(vehicle, output.gear());
-            current.apply(controller, vehicle, output, motion, dt);
+            current.apply(controller, vehicle, output, motion, appliedSteering, dt);
+            if (slideForcesSafe) {
+                current.applySlideForces(vehicle, motion, slideOutput);
+            }
             runtime.output = output;
+            runtime.slideOutput = slideOutput;
             runtime.lastDelta = dt;
-            double skid = Math.max(output.burnoutSpeedKph() * 0.1, current.wheelSkid(vehicle));
+            runtime.lastHeadingRadians = motion.headingRadians();
+            runtime.observerInitialized = true;
+            double skid = Math.max(
+                    Math.max(output.burnoutSpeedKph() * 0.1, current.wheelSkid(vehicle)),
+                    slideOutput.skidSpeedMps());
             CarPhysicsImprovedV1Mod.updateEffects(current.vehicleId(vehicle), output.burnoutSpeedKph(), skid);
 
             long now = System.nanoTime();
@@ -101,7 +178,21 @@ public final class LegacyHooks {
                         + " traction=" + round(output.tireTraction(), 2)
                         + " burnout=" + round(output.burnoutSpeedKph(), 1)
                         + " drag=" + Math.round(output.dragMagnitude())
-                        + " steer=" + round(output.steeringRadians(), 3));
+                        + " steer=" + round(output.steeringRadians(), 3)
+                        + " side=" + round(motion.lateralSpeedMps(), 2)
+                        + " beta=" + round(Math.toDegrees(slideOutput.sideSlipAngleRadians()), 1)
+                        + " yaw=" + round(yawRate, 3)
+                        + "/" + round(slideOutput.expectedYawRateRadiansPerSecond(), 3)
+                        + " grip=" + round(slideOutput.frontGripUse(), 2)
+                        + "/" + round(slideOutput.rearGripUse(), 2)
+                        + " slide=" + slideOutput.mode()
+                        + ":" + slideOutput.cause()
+                        + " blend=" + round(slideOutput.slideBlend(), 2)
+                        + " wheelGrip=" + round(slideOutput.wheelFrictionScale(), 2)
+                        + " lat=" + Math.round(slideOutput.lateralForce())
+                        + " yawCmd=" + Math.round(slideOutput.bulletYawTorque())
+                        + " clutch=" + round(output.clutchKickIntensity(), 2)
+                        + " calibrated=" + slideOutput.yawSignCalibrated());
             }
             CarPhysicsImprovedV1Mod.updateStatus("active on " + snapshot.spec().fullType()
                     + "; gear=" + gearName(output.gear()));
@@ -129,6 +220,9 @@ public final class LegacyHooks {
                     }
                     current.applyBurnoutVisual(
                             vehicle, runtime.output.burnoutSpeedKph(), runtime.lastDelta);
+                    if (runtime.slideOutput != null) {
+                        current.applySlideVisual(vehicle, runtime.slideOutput.slideBlend());
+                    }
                 }
             }
         } catch (Throwable error) {
@@ -145,6 +239,21 @@ public final class LegacyHooks {
             return gear > 1 ? gear - 1 : gear == 1 ? 0 : -1;
         }
         return gear;
+    }
+
+    /** Observes the native collision; V1 forces remain suspended during the impact. */
+    public static void onVehicleCrash(Object vehicle, float impactDelta) {
+        if (vehicle == null || !CarPhysicsImprovedV1Mod.enabled()) {
+            return;
+        }
+        RuntimeState runtime = VEHICLES.computeIfAbsent(vehicle, ignored -> new RuntimeState());
+        double severity = clamp(Math.abs(Double.isFinite(impactDelta) ? impactDelta : 0.0), 0.0, 30.0) / 30.0;
+        runtime.collisionCooldownSeconds = Math.max(runtime.collisionCooldownSeconds,
+                0.35 + severity * 0.25);
+        runtime.impactDisturbanceSeconds = Math.max(runtime.impactDisturbanceSeconds,
+                1.10 + severity * 0.40);
+        runtime.slide.reset();
+        runtime.observerInitialized = false;
     }
 
     private static PzLegacyAccess access() {
@@ -168,6 +277,14 @@ public final class LegacyHooks {
     private static void fail(String stage, Throwable error) {
         if (!failed) {
             failed = true;
+            try {
+                if (access != null) {
+                    access.restoreAllWheelFriction();
+                }
+            } catch (Throwable restoreError) {
+                System.err.println("[CarPhysicsImprovedV1] wheel-friction restore failed: "
+                        + restoreError.getClass().getSimpleName() + ": " + restoreError.getMessage());
+            }
             String message = stage + " failed: " + error.getClass().getSimpleName() + ": " + error.getMessage();
             CarPhysicsImprovedV1Mod.updateStatus(message + "; V1 disabled, vanilla controller retained");
             System.err.println("[CarPhysicsImprovedV1] " + message);
@@ -184,14 +301,40 @@ public final class LegacyHooks {
         return Math.rint(value * scale) / scale;
     }
 
+    private static double wrapAngle(double angle) {
+        double value = angle;
+        while (value > Math.PI) {
+            value -= Math.PI * 2.0;
+        }
+        while (value < -Math.PI) {
+            value += Math.PI * 2.0;
+        }
+        return value;
+    }
+
+    private static double clamp(double value, double minimum, double maximum) {
+        if (!Double.isFinite(value)) {
+            return minimum;
+        }
+        return Math.max(minimum, Math.min(maximum, value));
+    }
+
     private static final class RuntimeState {
         private Object scriptIdentity;
         private PzLegacyAccess.Snapshot snapshot;
-        private LegacyPhysics.Conditions conditions;
+        private PzLegacyAccess.ConditionSnapshot conditions;
         private LegacyPhysics.State physics = new LegacyPhysics.State();
+        private LegacySlideDynamics.State slide = new LegacySlideDynamics.State();
         private LegacyPhysics.Output output;
+        private LegacySlideDynamics.Output slideOutput;
         private double conditionTimer;
         private double lastDelta = 1.0 / 60.0;
+        private double activeAgeSeconds;
+        private double collisionCooldownSeconds;
+        private double impactDisturbanceSeconds;
+        private double lastClutchKickIntensity;
+        private double lastHeadingRadians;
+        private boolean observerInitialized;
         private long lastTelemetry;
     }
 }

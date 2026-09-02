@@ -16,6 +16,7 @@ public final class RuntimeAbiSmokeTest {
         vehicle.getDeclaredMethod("applyImpulseFromHitPlant", object, float.class);
         vehicle.getDeclaredMethod("applyImpulseFromHitPedestrian", character);
         vehicle.getDeclaredMethod("applyImpulseFromHitCorpse", corpse);
+        vehicle.getDeclaredMethod("crash", float.class, boolean.class);
         vehicle.getDeclaredField("impulsesFromHitObjects");
         Class<?> impulse = Class.forName("zombie.vehicles.BaseVehicle$VehicleImpulse", false, loader);
         impulse.getDeclaredField("impulse");

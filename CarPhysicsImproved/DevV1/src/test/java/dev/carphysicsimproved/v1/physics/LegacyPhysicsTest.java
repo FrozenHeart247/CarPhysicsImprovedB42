@@ -73,6 +73,48 @@ public final class LegacyPhysicsTest {
                 reverseState, 0.05);
         check(reverseLimited.engineForce() == 0.0, "reverse propulsion must stop above the configured limit");
 
+        LegacyPhysics.State neutralDropState = new LegacyPhysics.State();
+        neutralDropState.gear = 1;
+        neutralDropState.lastStepGear = 0;
+        neutralDropState.engineRpm = 4_200.0;
+        neutralDropState.throttle = 1.0;
+        LegacyPhysics.Output neutralDrop = LegacyPhysics.step(sport, road, settings,
+                new LegacyPhysics.Input(0.0, true, true, false, false, false,
+                        0.0, 1.0, true, 1, true),
+                neutralDropState, 0.05);
+        check(neutralDrop.clutchKickIntensity() > 0.0,
+                "high-RPM neutral-to-first engagement must create a transient clutch kick");
+        check(neutralDrop.burnoutSpeedKph() > 0.0,
+                "a strong first-gear clutch dump must create measurable wheelspin");
+        check(neutralDrop.engineForce() < neutralDrop.rawDriveForce(),
+                "clutch-kick excess must become wheelspin instead of body acceleration");
+
+        LegacyPhysics.State fifthGearDropState = new LegacyPhysics.State();
+        fifthGearDropState.gear = 5;
+        fifthGearDropState.lastStepGear = 0;
+        fifthGearDropState.engineRpm = 4_200.0;
+        fifthGearDropState.throttle = 1.0;
+        LegacyPhysics.Output fifthGearDrop = LegacyPhysics.step(sport, road, settings,
+                new LegacyPhysics.Input(0.0, true, true, false, false, false,
+                        0.0, 1.0, true, 5, true),
+                fifthGearDropState, 0.05);
+        check(fifthGearDrop.burnoutSpeedKph() == 0.0,
+                "a high-gear engagement must not receive first-gear clutch-dump wheelspin");
+        check(fifthGearDrop.rawDriveForce() < neutralDrop.rawDriveForce() * 0.5,
+                "neutral-drop torque must retain gear-ratio authority");
+
+        LegacyPhysics.State disabledKickState = new LegacyPhysics.State();
+        disabledKickState.gear = 1;
+        disabledKickState.lastStepGear = 0;
+        disabledKickState.engineRpm = 4_200.0;
+        disabledKickState.throttle = 1.0;
+        LegacyPhysics.Output disabledKick = LegacyPhysics.step(sport, road, settings,
+                new LegacyPhysics.Input(0.0, true, true, false, false, false,
+                        0.0, 1.0, true, 1, false),
+                disabledKickState, 0.05);
+        check(disabledKick.clutchKickIntensity() == 0.0,
+                "disabled clutch-kick tuning must leave neutral engagement unchanged");
+
         LegacyPhysics.State steeringState = warmedState(1);
         LegacyPhysics.Output lowSteering = LegacyPhysics.step(sport, road, settings,
                 new LegacyPhysics.Input(2.0, true, false, false, false, false, 1.0, 0.0, true, 1),
@@ -84,6 +126,7 @@ public final class LegacyPhysicsTest {
         check(Math.abs(highSteering.steeringRadians()) < Math.abs(lowSteering.steeringRadians()),
                 "high-speed steering must build more slowly");
         checkFinite(firstGear, fifthGear, highSpeed, coast, coastRpm, burnout, good, bad, reverseLimited,
+                neutralDrop, fifthGearDrop, disabledKick,
                 lowSteering, highSteering);
         System.out.println("LegacyPhysicsTest: all legacy drivetrain invariants passed");
     }
