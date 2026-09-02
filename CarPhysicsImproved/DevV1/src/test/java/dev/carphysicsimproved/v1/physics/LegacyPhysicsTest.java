@@ -31,6 +31,23 @@ public final class LegacyPhysicsTest {
         check(coast.engineForce() == 0.0 && coast.dragMagnitude() > 0.0,
                 "released throttle must coast through resistance instead of propulsion");
 
+        LegacyPhysics.State coastRpmState = new LegacyPhysics.State();
+        coastRpmState.gear = 4;
+        coastRpmState.engineRpm = 4_000.0;
+        coastRpmState.throttle = 0.0;
+        LegacyPhysics.Output coastRpm = null;
+        for (int index = 0; index < 80; index++) {
+            double decreasingSpeedMps = Math.max(0.0, 10.0 - index * 0.25);
+            coastRpm = LegacyPhysics.step(sport, road, settings,
+                    new LegacyPhysics.Input(decreasingSpeedMps, true, false, false, false, false,
+                            0.0, 0.0, true, 4),
+                    coastRpmState, 0.05);
+            check(coastRpm.engineForce() == 0.0,
+                    "RPM coupling while coasting must not add propulsion");
+        }
+        check(coastRpm != null && coastRpm.engineRpm() <= sport.idleRpm() + 1.0,
+                "coasting to rest must return engine RPM to idle");
+
         LegacyPhysics.Spec powerful = spec("Base.TestPowerful", 900.0, 900.0, 120.0, 3, 5);
         LegacyPhysics.Conditions poorGrip = new LegacyPhysics.Conditions(0.7, 0.4, 0.55, false);
         LegacyPhysics.State burnoutState = warmedState(1);
@@ -66,7 +83,7 @@ public final class LegacyPhysicsTest {
                 highSteeringState, 0.05);
         check(Math.abs(highSteering.steeringRadians()) < Math.abs(lowSteering.steeringRadians()),
                 "high-speed steering must build more slowly");
-        checkFinite(firstGear, fifthGear, highSpeed, coast, burnout, good, bad, reverseLimited,
+        checkFinite(firstGear, fifthGear, highSpeed, coast, coastRpm, burnout, good, bad, reverseLimited,
                 lowSteering, highSteering);
         System.out.println("LegacyPhysicsTest: all legacy drivetrain invariants passed");
     }

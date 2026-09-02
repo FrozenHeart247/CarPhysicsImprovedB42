@@ -4,5 +4,5 @@ author=Car Physics Improved contributors
 versionMin=42.0
 require=ZombieBuddy
 incompatible=\CarPhysicsImprovedB42;\RoadcraftDynamicsB42;\RealisticCarPhysics
-modversion=0.1.0-dev
+modversion=0.1.1-dev
 description=Independent ZombieBuddy port of the legacy drivetrain style: torque-converter gears, traction-limited wheelspin, old resistance and steering formulas, collision impulse controls, and generic Workshop vehicle support.

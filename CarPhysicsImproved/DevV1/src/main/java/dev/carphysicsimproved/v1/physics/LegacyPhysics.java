@@ -122,6 +122,14 @@ public final class LegacyPhysics {
             double couplingRate = clamp(converter, 0.0, 1.0) * dt * 9.0;
             rpm = lerp(rpm, coupledTarget, clamp(couplingRate, 0.0, 1.0));
             rpm += engineTorque / Math.max(0.001, baseTorque * 1.0E-4) * dt;
+        } else if (input.engineRunning() && gear != 0) {
+            // Keep the engine-speed value coupled while coasting. Previously RPM was
+            // only updated under throttle, so the value (and vanilla engine audio)
+            // could remain frozen at the last acceleration RPM all the way to rest.
+            double coastTargetRpm = clamp(Math.max(spec.idleRpm, wheelInputRpm), spec.idleRpm, redline);
+            double rpmDifference = Math.abs(rpm - coastTargetRpm);
+            double coastRateRpmPerSecond = 900.0 + Math.min(2_700.0, rpmDifference * 1.5);
+            rpm = approach(rpm, coastTargetRpm, coastRateRpmPerSecond * dt);
         }
 
         if (gear < 0) {
