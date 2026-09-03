@@ -43,6 +43,19 @@ public final class RuntimeAbiSmokeTest {
                 || LegacyHooks.manualGearAfterShift(5, 1, 5) != 5) {
             throw new AssertionError("manual R-N-1-2 selector is not bounded");
         }
+        CarPhysicsImprovedV1Mod.configureSlide(
+                true, 1.2, 0.8, 1.1, false,
+                1_600.0, 2_200.0, 0.58, 0.52, 1.65);
+        var slide = CarPhysicsImprovedV1Mod.slideTuning();
+        if (slide.driftIntensity() != 1.2 || slide.stabilityAssist() != 0.8
+                || slide.powerDriftEntryDelaySeconds() != 1.1 || slide.clutchKickEnabled()
+                || slide.powerDriftRotation() != 1_600.0
+                || slide.handbrakeDriftRotation() != 2_200.0
+                || slide.powerWheelFrictionScale() != 0.58
+                || slide.handbrakeWheelFrictionScale() != 0.52
+                || slide.driftSteeringMultiplier() != 1.65) {
+            throw new AssertionError("Lua-facing slide Sandbox profile was not applied atomically");
+        }
         System.out.println("RuntimeAbiSmokeTest: B42.20.4 legacy adapter constructed successfully");
     }
 }

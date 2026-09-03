@@ -94,7 +94,12 @@ local function applyOptions()
         sandboxValue("DriftIntensity", 1.0),
         sandboxValue("StabilityAssist", 1.0),
         sandboxValue("PowerDriftDelay", 0.8),
-        sandboxBool("ClutchKick", true))
+        sandboxBool("ClutchKick", true),
+        sandboxValue("PowerDriftRotation", 2000.0),
+        sandboxValue("HandbrakeDriftRotation", 2000.0),
+        sandboxValue("PowerDriftGripPercent", 35.0) / 100.0,
+        sandboxValue("HandbrakeDriftGripPercent", 35.0) / 100.0,
+        sandboxValue("DriftSteeringPercent", 150.0) / 100.0)
     callJava("configureSteering",
         steeringFactorLow:getValue(), steeringFactorHigh:getValue(),
         centeringLow:getValue(), centeringHigh:getValue(),

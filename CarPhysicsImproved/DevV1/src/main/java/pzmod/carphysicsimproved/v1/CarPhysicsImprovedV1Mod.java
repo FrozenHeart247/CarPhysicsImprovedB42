@@ -103,13 +103,21 @@ public final class CarPhysicsImprovedV1Mod {
     }
 
     public static void configureSlide(boolean enabledValue, double driftIntensity,
-            double stabilityAssist, double powerDriftEntryDelaySeconds, boolean clutchKickEnabled) {
+            double stabilityAssist, double powerDriftEntryDelaySeconds, boolean clutchKickEnabled,
+            double powerDriftRotation, double handbrakeDriftRotation,
+            double powerWheelFrictionScale, double handbrakeWheelFrictionScale,
+            double driftSteeringMultiplier) {
         slideTuning = new LegacySlideDynamics.Tuning(
                 enabledValue,
                 driftIntensity,
                 stabilityAssist,
                 powerDriftEntryDelaySeconds,
-                clutchKickEnabled);
+                clutchKickEnabled,
+                powerDriftRotation,
+                handbrakeDriftRotation,
+                powerWheelFrictionScale,
+                handbrakeWheelFrictionScale,
+                driftSteeringMultiplier);
     }
 
     public static void configureImpulses(double plant, double zombie, double corpse) {

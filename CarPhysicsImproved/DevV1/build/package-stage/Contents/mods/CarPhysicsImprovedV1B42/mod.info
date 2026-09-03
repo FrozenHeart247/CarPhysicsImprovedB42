@@ -4,5 +4,5 @@ author=Car Physics Improved contributors
 versionMin=42.0
 require=ZombieBuddy
 incompatible=\CarPhysicsImprovedB42;\RoadcraftDynamicsB42;\RealisticCarPhysics
-modversion=0.2.4-dev
+modversion=0.2.9-dev
 description=Independent ZombieBuddy port of the legacy drivetrain style with traction-limited wheelspin, natural and controlled slides, clutch kick, old resistance and steering formulas, collision impulse controls, and generic Workshop vehicle support.

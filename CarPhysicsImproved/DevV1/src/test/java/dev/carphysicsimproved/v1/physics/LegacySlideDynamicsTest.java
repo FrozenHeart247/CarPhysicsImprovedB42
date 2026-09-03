@@ -16,8 +16,11 @@ public final class LegacySlideDynamicsTest {
         steeringTapDoesNotStartSlide();
         sustainedPowerCanStartDrift();
         handbrakeNeedsSpeedAndSteering();
-        releasedDriftRetainsGripBriefly();
-        targetSlipAngleReducesRotationCommand();
+        releaseRestoresGripImmediately();
+        rawSteeringDirectlyControlsRotationCommand();
+        existingSlipDoesNotDampenIntentionalRotation();
+        heldIntentKeepsBvdStyleOverlayActive();
+        sandboxTuningChangesRotationAndGrip();
         naturalRearGripLossCanStartSlide();
         impactCanBecomeNaturalSlide();
         leftAndRightCommandsAreSymmetric();
@@ -89,7 +92,7 @@ public final class LegacySlideDynamicsTest {
         LegacySlideDynamics.State turning = calibratedState();
         LegacySlideDynamics.Output turningOutput = null;
         for (int index = 0; index < 5; index++) {
-            turningOutput = step(turning, ROAD, input(12.0, 0.2, -0.45, 0.12,
+            turningOutput = step(turning, ROAD, input(12.0, 0.2, -0.45, 0.14,
                     0.2, 0.0, 1.0, 2, 0.2, 0.0, 0.3, false));
         }
         check(turningOutput != null && (turningOutput.mode() == LegacySlideDynamics.Mode.SLIDE
@@ -108,11 +111,11 @@ public final class LegacySlideDynamicsTest {
                 "handbrake drift must temporarily reduce the native wheel-friction budget");
     }
 
-    private static void releasedDriftRetainsGripBriefly() {
+    private static void releaseRestoresGripImmediately() {
         LegacySlideDynamics.State state = calibratedState();
         LegacySlideDynamics.Output output = null;
         for (int index = 0; index < 5; index++) {
-            output = step(state, ROAD, input(12.0, 0.2, -0.45, 0.12,
+            output = step(state, ROAD, input(12.0, 0.2, -0.45, 0.14,
                     0.2, 0.0, 1.0, 2, 0.2, 0.0, 0.3, false));
         }
         check(output != null && output.driftGripActive(),
@@ -120,34 +123,84 @@ public final class LegacySlideDynamicsTest {
 
         LegacySlideDynamics.Output firstReleased = step(state, ROAD, input(12.0, 0.2, -0.45, 0.0,
                 0.0, 0.0, 0.0, 2, 0.0, 0.0, 0.2, false));
-        check(!firstReleased.intentionalSlide() && firstReleased.driftGripActive()
-                        && firstReleased.wheelFrictionScale() < 1.0,
-                "releasing the drift input must not restore full wheel grip in one physics frame");
-
-        LegacySlideDynamics.Output settled = firstReleased;
-        for (int index = 0; index < 10; index++) {
-            settled = step(state, ROAD, input(12.0, 0.0, -0.10, 0.0,
-                    0.0, 0.0, 0.0, 2, 0.0, 0.0, 0.0, false));
-        }
-        check(!settled.driftGripActive() && settled.wheelFrictionScale() == 1.0,
-                "the short drift-grip hold must expire and restore native wheel friction");
+        check(!firstReleased.intentionalSlide() && !firstReleased.driftGripActive()
+                        && firstReleased.wheelFrictionScale() == 1.0
+                        && firstReleased.bulletYawTorque() == 0.0,
+                "releasing drift input must immediately restore grip and remove intentional yaw torque");
     }
 
-    private static void targetSlipAngleReducesRotationCommand() {
+    private static void rawSteeringDirectlyControlsRotationCommand() {
         LegacySlideDynamics.State shallowState = calibratedState();
-        LegacySlideDynamics.State targetState = calibratedState();
+        LegacySlideDynamics.State deepState = calibratedState();
         LegacySlideDynamics.Output shallow = null;
-        LegacySlideDynamics.Output nearTarget = null;
-        double targetLateralSpeed = Math.tan(Math.toRadians(15.5)) * 12.0;
+        LegacySlideDynamics.Output deep = null;
         for (int index = 0; index < 7; index++) {
-            shallow = step(shallowState, ROAD, input(12.0, 0.2, -0.45, 0.12,
+            shallow = step(shallowState, ROAD, inputWithRawSteering(12.0, 0.2, -0.45, 0.12, 0.30,
                     0.2, 0.0, 1.0, 2, 0.2, 0.0, 0.3, false));
-            nearTarget = step(targetState, ROAD, input(12.0, targetLateralSpeed, -0.45, 0.12,
+            deep = step(deepState, ROAD, inputWithRawSteering(12.0, 0.2, -0.45, 0.12, 0.80,
                     0.2, 0.0, 1.0, 2, 0.2, 0.0, 0.3, false));
         }
-        check(shallow != null && nearTarget != null
-                        && Math.abs(nearTarget.bulletYawTorque()) < Math.abs(shallow.bulletYawTorque()),
-                "rotation assistance must taper as the car approaches its target slip angle");
+        check(shallow != null && deep != null
+                        && Math.abs(deep.bulletYawTorque()) > Math.abs(shallow.bulletYawTorque()) * 2.0,
+                "BVD-style yaw torque must scale directly with current raw steering input");
+
+        LegacySlideDynamics.Output counterSteer = step(deepState, ROAD,
+                inputWithRawSteering(12.0, 0.2, -0.45, -0.12, -0.80,
+                        0.2, 0.0, 1.0, 2, 0.2, 0.0, 0.3, false));
+        check(Math.signum(counterSteer.bulletYawTorque()) == -Math.signum(deep.bulletYawTorque()),
+                "counter-steering must reverse the yaw command in the same physics frame");
+    }
+
+    private static void existingSlipDoesNotDampenIntentionalRotation() {
+        LegacySlideDynamics.State shallowState = calibratedState();
+        LegacySlideDynamics.State slidingState = calibratedState();
+        LegacySlideDynamics.Output shallow = step(shallowState, ROAD,
+                inputWithRawSteering(12.0, 0.2, -0.45, 0.14, 0.65,
+                        0.2, 0.0, 1.0, 2, 0.2, 0.0, 0.3, false));
+        LegacySlideDynamics.Output alreadySliding = step(slidingState, ROAD,
+                inputWithRawSteering(12.0, 4.0, -0.45, 0.14, 0.65,
+                        0.2, 0.0, 1.0, 2, 0.2, 0.0, 0.3, false));
+        check(Math.abs(shallow.bulletYawTorque() - alreadySliding.bulletYawTorque()) < 0.001,
+                "existing side-slip angle must not taper the requested BVD-style rotation");
+        check(shallow.lateralForce() == 0.0 && alreadySliding.lateralForce() == 0.0,
+                "intentional drift must not receive a trajectory-correcting lateral force");
+    }
+
+    private static void heldIntentKeepsBvdStyleOverlayActive() {
+        LegacySlideDynamics.State state = calibratedState();
+        LegacySlideDynamics.Output output = null;
+        for (int index = 0; index < 55; index++) {
+            output = step(state, ROAD, input(10.0, 0.0, -0.72, 0.18,
+                    1.0, 0.0, 0.0, 1, 1.18, 0.0, 0.0, false));
+        }
+        check(output != null && output.intentionalSlide()
+                        && output.driftGripActive()
+                        && output.wheelFrictionScale() < 1.0
+                        && output.lateralForce() == 0.0,
+                "BVD-style drift overlay must remain active exactly while intentional input is held");
+    }
+
+    private static void sandboxTuningChangesRotationAndGrip() {
+        LegacySlideDynamics.Tuning custom = new LegacySlideDynamics.Tuning(
+                true, 1.0, 1.0, 0.8, true,
+                2_400.0, 2_800.0, 0.62, 0.60, 1.75);
+        LegacySlideDynamics.State defaultState = calibratedState();
+        LegacySlideDynamics.State customState = calibratedState();
+        LegacySlideDynamics.Output defaultOutput = null;
+        LegacySlideDynamics.Output customOutput = null;
+        for (int index = 0; index < 5; index++) {
+            LegacySlideDynamics.Input handbrakeTurn = input(12.0, 0.2, -0.45, 0.14,
+                    0.2, 0.0, 1.0, 2, 0.2, 0.0, 0.3, false);
+            defaultOutput = step(defaultState, ROAD, handbrakeTurn);
+            customOutput = step(customState, ROAD, custom, handbrakeTurn);
+        }
+        check(defaultOutput != null && customOutput != null
+                        && customOutput.driftRotation() > defaultOutput.driftRotation()
+                        && Math.abs(customOutput.bulletYawTorque())
+                                > Math.abs(defaultOutput.bulletYawTorque()),
+                "the configured handbrake rotation must reach the controller");
+        check(Math.abs(customOutput.wheelFrictionScale() - 0.60) < 0.0001,
+                "the configured handbrake wheel grip must reach the controller independently");
     }
 
     private static void naturalRearGripLossCanStartSlide() {
@@ -239,7 +292,7 @@ public final class LegacySlideDynamicsTest {
 
     private static void clutchKickCanInitiateButWeakLaunchCannot() {
         LegacySlideDynamics.State kickState = calibratedState();
-        LegacySlideDynamics.Output kick = step(kickState, ROAD, input(9.0, 0.2, -0.35, 0.12,
+        LegacySlideDynamics.Output kick = step(kickState, ROAD, input(9.0, 0.2, -0.35, 0.14,
                 0.8, 0.0, 0.0, 1, 0.95, 0.70, 0.0, false));
         check(kick.mode() == LegacySlideDynamics.Mode.SLIDE
                         && kick.cause() == LegacySlideDynamics.Cause.CLUTCH_KICK,
@@ -263,8 +316,15 @@ public final class LegacySlideDynamicsTest {
 
     private static LegacySlideDynamics.Output step(LegacySlideDynamics.State state,
             LegacySlideDynamics.AxleGrip grip, LegacySlideDynamics.Input input) {
-        LegacySlideDynamics.Output output = LegacySlideDynamics.step(CAR, grip, TUNING, input, state, DT);
+        return step(state, grip, TUNING, input);
+    }
+
+    private static LegacySlideDynamics.Output step(LegacySlideDynamics.State state,
+            LegacySlideDynamics.AxleGrip grip, LegacySlideDynamics.Tuning tuning,
+            LegacySlideDynamics.Input input) {
+        LegacySlideDynamics.Output output = LegacySlideDynamics.step(CAR, grip, tuning, input, state, DT);
         check(Double.isFinite(output.sideSlipAngleRadians())
+                        && Double.isFinite(output.driftRotation())
                         && Double.isFinite(output.expectedYawRateRadiansPerSecond())
                         && Double.isFinite(output.frontGripUse())
                         && Double.isFinite(output.rearGripUse())
@@ -277,8 +337,18 @@ public final class LegacySlideDynamicsTest {
     private static LegacySlideDynamics.Input input(double speed, double side, double yaw, double steering,
             double throttle, double serviceBrake, double handbrake, int gear, double driveUse,
             double clutchKick, double rearNativeSkid, boolean impact) {
+        return inputWithRawSteering(speed, side, yaw, steering,
+                Math.max(-1.0, Math.min(1.0, steering / 0.5)),
+                throttle, serviceBrake, handbrake, gear, driveUse,
+                clutchKick, rearNativeSkid, impact);
+    }
+
+    private static LegacySlideDynamics.Input inputWithRawSteering(double speed, double side, double yaw,
+            double steering, double rawSteering, double throttle, double serviceBrake,
+            double handbrake, int gear, double driveUse, double clutchKick,
+            double rearNativeSkid, boolean impact) {
         double tractionLimit = CAR.massKg() * 2.0;
-        return new LegacySlideDynamics.Input(speed, side, yaw, steering, throttle,
+        return new LegacySlideDynamics.Input(speed, side, yaw, steering, rawSteering, throttle,
                 serviceBrake, handbrake, gear, driveUse * tractionLimit, tractionLimit,
                 clutchKick, rearNativeSkid, impact);
     }

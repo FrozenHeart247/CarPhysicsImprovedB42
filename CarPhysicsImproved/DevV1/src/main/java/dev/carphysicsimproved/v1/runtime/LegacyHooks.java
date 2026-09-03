@@ -81,6 +81,7 @@ public final class LegacyHooks {
             boolean backward = controls.backward();
             boolean serviceBrake = manual && backward;
             double analogThrottle = forward || (!manual && backward) ? controls.throttle() : 0.0;
+            LegacySlideDynamics.Tuning slideTuning = CarPhysicsImprovedV1Mod.slideTuning();
             LegacyPhysics.Input input = new LegacyPhysics.Input(
                     motion.longitudinalSpeedMps(),
                     current.engineRunning(vehicle),
@@ -92,7 +93,7 @@ public final class LegacyHooks {
                     analogThrottle,
                     manual,
                     requestedGear,
-                    CarPhysicsImprovedV1Mod.slideTuning().clutchKickEnabled());
+                    slideTuning.clutchKickEnabled());
             LegacyPhysics.Output output = LegacyPhysics.step(
                     snapshot.spec(), runtime.conditions.longitudinal(),
                     CarPhysicsImprovedV1Mod.settings(), input, runtime.physics, dt);
@@ -121,12 +122,13 @@ public final class LegacyHooks {
                 slideOutput = LegacySlideDynamics.step(
                         snapshot.slideSpec(),
                         runtime.conditions.lateral(),
-                        CarPhysicsImprovedV1Mod.slideTuning(),
+                        slideTuning,
                         new LegacySlideDynamics.Input(
                                 motion.longitudinalSpeedMps(),
                                 motion.lateralSpeedMps(),
                                 yawRate,
                                 output.steeringRadians(),
+                                controls.steering(),
                                 output.throttle(),
                                 clamp(output.brakingForce() / Math.max(0.1, snapshot.spec().brakingForce()), 0.0, 1.0),
                                 controls.handbrake() ? 1.0 : 0.0,
@@ -143,7 +145,8 @@ public final class LegacyHooks {
                 slideOutput = LegacySlideDynamics.Output.inactive();
             }
             current.applyWheelFrictionScale(vehicle, slideOutput.wheelFrictionScale());
-            double driftSteeringMultiplier = slideOutput.driftGripActive() ? 1.40 : 1.0;
+            double driftSteeringMultiplier = slideOutput.intentionalSlide()
+                    ? slideTuning.driftSteeringMultiplier() : 1.0;
             double appliedSteering = clamp(
                     output.steeringRadians() * driftSteeringMultiplier,
                     -snapshot.spec().steeringClampRadians(),
@@ -181,12 +184,14 @@ public final class LegacyHooks {
                         + " steer=" + round(output.steeringRadians(), 3)
                         + " side=" + round(motion.lateralSpeedMps(), 2)
                         + " beta=" + round(Math.toDegrees(slideOutput.sideSlipAngleRadians()), 1)
+                        + " rot=" + Math.round(slideOutput.driftRotation())
                         + " yaw=" + round(yawRate, 3)
                         + "/" + round(slideOutput.expectedYawRateRadiansPerSecond(), 3)
                         + " grip=" + round(slideOutput.frontGripUse(), 2)
                         + "/" + round(slideOutput.rearGripUse(), 2)
                         + " slide=" + slideOutput.mode()
                         + ":" + slideOutput.cause()
+                        + " active=" + slideOutput.intentionalSlide()
                         + " blend=" + round(slideOutput.slideBlend(), 2)
                         + " wheelGrip=" + round(slideOutput.wheelFrictionScale(), 2)
                         + " lat=" + Math.round(slideOutput.lateralForce())

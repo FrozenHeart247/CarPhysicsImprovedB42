@@ -41,6 +41,16 @@ option CarPhysicsImprovedV1B42.SlideMechanics
 { type = boolean, default = true, page = CPI_V1_Slides, translation = CPI_V1_SlideMechanics, }
 option CarPhysicsImprovedV1B42.DriftIntensity
 { type = double, min = 0, max = 2, default = 1, page = CPI_V1_Slides, translation = CPI_V1_DriftIntensity, }
+option CarPhysicsImprovedV1B42.PowerDriftRotation
+{ type = integer, min = 0, max = 3000, default = 2000, page = CPI_V1_Slides, translation = CPI_V1_PowerDriftRotation, }
+option CarPhysicsImprovedV1B42.HandbrakeDriftRotation
+{ type = integer, min = 0, max = 3000, default = 2000, page = CPI_V1_Slides, translation = CPI_V1_HandbrakeDriftRotation, }
+option CarPhysicsImprovedV1B42.PowerDriftGripPercent
+{ type = integer, min = 25, max = 100, default = 35, page = CPI_V1_Slides, translation = CPI_V1_PowerDriftGripPercent, }
+option CarPhysicsImprovedV1B42.HandbrakeDriftGripPercent
+{ type = integer, min = 25, max = 100, default = 35, page = CPI_V1_Slides, translation = CPI_V1_HandbrakeDriftGripPercent, }
+option CarPhysicsImprovedV1B42.DriftSteeringPercent
+{ type = integer, min = 100, max = 200, default = 150, page = CPI_V1_Slides, translation = CPI_V1_DriftSteeringPercent, }
 option CarPhysicsImprovedV1B42.StabilityAssist
 { type = double, min = 0, max = 2, default = 1, page = CPI_V1_Slides, translation = CPI_V1_StabilityAssist, }
 option CarPhysicsImprovedV1B42.PowerDriftDelay

@@ -29,6 +29,7 @@ public final class LegacySlideDynamics {
         double lateralSpeed = clamp(finite(input.lateralSpeedMps(), 0.0), -60.0, 60.0);
         double yawRate = clamp(finite(input.yawRateRadiansPerSecond(), 0.0), -8.0, 8.0);
         double steering = clamp(finite(input.steeringAngleRadians(), 0.0), -1.2, 1.2);
+        double steeringInput = clamp(finite(input.steeringInput(), 0.0), -1.0, 1.0);
         double throttle = clamp(finite(input.throttle(), 0.0), 0.0, 1.0);
         double serviceBrake = clamp(finite(input.serviceBrake(), 0.0), 0.0, 1.0);
         double handbrake = clamp(finite(input.handbrake(), 0.0), 0.0, 1.0);
@@ -112,9 +113,10 @@ public final class LegacySlideDynamics {
                 || yawOversteerEvidence;
         boolean actualSlideEvidence = actualLateralEvidence
                 || turning && input.rearNativeSkid() >= 0.18;
+        boolean driftSteeringIntent = Math.abs(steeringInput) >= 0.25;
         boolean powerRequest = input.gear() > 0 && input.gear() <= 2
-                && absoluteSpeed >= 4.5 && absoluteSpeed <= 22.0
-                && throttle >= 0.85 && Math.abs(steering) >= 0.16
+                && absoluteSpeed >= 5.5 && absoluteSpeed <= 22.0
+                && throttle >= 0.85 && driftSteeringIntent
                 && rearUse >= 0.88;
         state.powerIntentSeconds = approach(
                 state.powerIntentSeconds,
@@ -123,14 +125,11 @@ public final class LegacySlideDynamics {
         boolean powerReady = powerRequest
                 && state.powerIntentSeconds >= tuning.powerDriftEntryDelaySeconds();
 
-        boolean handbrakeRequest = handbrake >= 0.55 && turning
-                && absoluteSpeed >= 4.0 && absoluteSpeed <= 28.0;
-        state.handbrakeIntentSeconds = approach(
-                state.handbrakeIntentSeconds,
-                handbrakeRequest ? 0.30 : 0.0,
-                (handbrakeRequest ? 1.0 : 4.0) * dt);
-        boolean handbrakeReady = handbrakeRequest && state.handbrakeIntentSeconds >= 0.12;
-        boolean clutchReady = clutchKick >= 0.20 && turning && absoluteSpeed >= 3.5 && absoluteSpeed <= 24.0;
+        boolean handbrakeRequest = handbrake >= 0.55 && driftSteeringIntent
+                && input.gear() > 0 && absoluteSpeed >= 5.5 && absoluteSpeed <= 28.0;
+        boolean handbrakeReady = handbrakeRequest;
+        boolean clutchReady = clutchKick >= 0.20 && driftSteeringIntent
+                && input.gear() > 0 && absoluteSpeed >= 3.5 && absoluteSpeed <= 24.0;
 
         boolean naturalRearOverload = rearUse >= 1.0 && rearUse >= frontUse + 0.05;
         boolean severeRearOverload = rearUse >= 1.32 && turning;
@@ -164,8 +163,6 @@ public final class LegacySlideDynamics {
             state.slideBlend = 0.0;
             state.controlBlend = 0.0;
             state.slideAgeSeconds = 0.0;
-            state.driftGripHoldSeconds = 0.0;
-            state.driftGripCause = Cause.NONE;
             state.previousLateralForce = 0.0;
             state.previousBulletYawTorque = 0.0;
         } else {
@@ -189,55 +186,30 @@ public final class LegacySlideDynamics {
         double desiredBulletYawTorque = 0.0;
         double normalForce = spec.massKg() * GRAVITY;
         double yawInertia = spec.massKg() * spec.wheelbaseMeters() * spec.wheelbaseMeters() * 0.16;
-        boolean intentionalSlide = sliding && (
+        boolean intentionalSlideRequest = sliding && (
                 state.cause == Cause.POWER && powerRequest
                         || state.cause == Cause.HANDBRAKE && handbrakeRequest
                         || state.cause == Cause.CLUTCH_KICK && clutchReady);
-        if (intentionalSlide) {
-            state.driftGripHoldSeconds = 0.35;
-            state.driftGripCause = state.cause;
-        } else {
-            state.driftGripHoldSeconds = Math.max(0.0, state.driftGripHoldSeconds - dt);
-        }
-        boolean driftGripActive = (sliding || state.mode == Mode.RECOVERY)
-                && state.driftGripHoldSeconds > 0.0 && isIntentionalCause(state.driftGripCause);
-        double naturalRecoveryBlend = sliding && !intentionalSlide
+        boolean intentionalSlide = intentionalSlideRequest;
+        boolean intentionalCommandReleased = state.intentionalCommandActive && !intentionalSlide;
+        state.intentionalCommandActive = intentionalSlide;
+        boolean intentionalOrigin = sliding && isIntentionalCause(state.cause);
+        boolean driftGripActive = intentionalSlide;
+        double naturalRecoveryBlend = sliding && !intentionalOrigin
                 ? smoothStep(clamp((state.slideAgeSeconds - 0.30) / 0.55, 0.0, 1.0))
                 : state.mode == Mode.RECOVERY ? 1.0 : 0.0;
 
-        if (sliding && intentionalSlide && yawSignCalibrated) {
-            double speedFade = 1.0 - smoothStep(clamp((absoluteSpeed - 18.0) / 12.0, 0.0, 1.0));
-            if (state.cause == Cause.HANDBRAKE) {
-                speedFade = Math.max(0.42, speedFade);
-            }
-            double direction = state.slideYawDirection == 0.0
-                    ? Math.signum(expectedYaw) : state.slideYawDirection;
-            double speedBlend = smoothStep(clamp((absoluteSpeed - 6.0) / 14.0, 0.0, 1.0));
-            double targetBetaDegrees = state.cause == Cause.HANDBRAKE
-                    ? lerp(18.0, 12.0, speedBlend)
-                    : lerp(14.0, 9.0, speedBlend);
-            double targetBetaMagnitude = Math.toRadians(targetBetaDegrees);
-            double targetBeta = -direction * targetBetaMagnitude;
-            double betaProgress = clamp(Math.abs(beta) / Math.max(Math.toRadians(3.0), targetBetaMagnitude),
-                    0.0, 1.0);
-            double rotationRetention = lerp(1.0, 0.18, smoothStep(betaProgress));
-            double currentTurnDirection = Math.signum(expectedYaw);
-            if (currentTurnDirection == 0.0) {
-                currentTurnDirection = direction;
-            }
-            double rotationFeedForward = -currentTurnDirection
-                    * normalForce * spec.wheelbaseMeters()
-                    * (state.cause == Cause.HANDBRAKE ? 0.080 : 0.055)
-                    * clamp(Math.abs(steering) / 0.45, 0.0, 1.0)
-                    * state.slideBlend * tuning.driftIntensity() * speedFade * rotationRetention;
-            double betaCorrection = clamp(
-                    (targetBeta - beta) / Math.max(Math.toRadians(3.0), targetBetaMagnitude),
-                    -1.25, 1.25)
-                    * normalForce * spec.wheelbaseMeters() * 0.045
-                    * state.slideBlend * tuning.driftIntensity() * speedFade;
-            desiredBulletYawTorque = rotationFeedForward + betaCorrection;
+        double driftRotation = 0.0;
+        if (intentionalSlide) {
+            driftRotation = state.cause == Cause.HANDBRAKE
+                    ? tuning.handbrakeDriftRotation()
+                    : tuning.powerDriftRotation();
+            // PzLegacyAccess normalizes the native steering sign. With that sign,
+            // this is equivalent to BVD's -nativeSteering * rotation * mass * .001.
+            desiredBulletYawTorque = steeringInput * driftRotation * spec.massKg() * 0.001
+                    * tuning.driftIntensity();
         } else if ((sliding || state.mode == Mode.RECOVERY)
-                && (yawSignCalibrated || Math.abs(steering) < 0.03)) {
+                && !intentionalOrigin && (yawSignCalibrated || Math.abs(steering) < 0.03)) {
             double recoverySeconds = sliding ? 1.15 : 0.62;
             double headingAcceleration = (expectedYaw - yawRate) / recoverySeconds;
             desiredBulletYawTorque = -headingAcceleration * yawInertia
@@ -245,16 +217,18 @@ public final class LegacySlideDynamics {
                     * naturalRecoveryBlend;
         }
 
-        double maximumBeta = lerp(Math.toRadians(18.0), Math.toRadians(8.0),
-                smoothStep(clamp((absoluteSpeed - 8.0) / 20.0, 0.0, 1.0)));
-        double allowedLateralSpeed = Math.tan(maximumBeta) * Math.max(absoluteSpeed, 1.0);
-        double lateralExcess = Math.max(0.0, Math.abs(lateralSpeed) - allowedLateralSpeed);
-        if (lateralExcess > 0.0) {
-            desiredLateralForce = -Math.signum(lateralSpeed) * spec.massKg() * lateralExcess / 0.45;
-        } else if (state.mode == Mode.RECOVERY || sliding && !intentionalSlide) {
-            double recoverySeconds = state.mode == Mode.RECOVERY ? 0.68 : 1.25;
-            desiredLateralForce = -lateralSpeed * spec.massKg() / recoverySeconds
-                    * tuning.stabilityAssist() * naturalRecoveryBlend;
+        if (!intentionalOrigin) {
+            double maximumBeta = lerp(Math.toRadians(18.0), Math.toRadians(8.0),
+                    smoothStep(clamp((absoluteSpeed - 8.0) / 20.0, 0.0, 1.0)));
+            double allowedLateralSpeed = Math.tan(maximumBeta) * Math.max(absoluteSpeed, 1.0);
+            double lateralExcess = Math.max(0.0, Math.abs(lateralSpeed) - allowedLateralSpeed);
+            if (lateralExcess > 0.0) {
+                desiredLateralForce = -Math.signum(lateralSpeed) * spec.massKg() * lateralExcess / 0.45;
+            } else if (state.mode == Mode.RECOVERY || sliding) {
+                double recoverySeconds = state.mode == Mode.RECOVERY ? 0.68 : 1.25;
+                desiredLateralForce = -lateralSpeed * spec.massKg() / recoverySeconds
+                        * tuning.stabilityAssist() * naturalRecoveryBlend;
+            }
         }
 
         double lateralLimit = normalForce * (sliding ? 0.11 : 0.14)
@@ -266,10 +240,16 @@ public final class LegacySlideDynamics {
         desiredLateralForce = clamp(desiredLateralForce, -lateralLimit, lateralLimit);
         desiredBulletYawTorque = clamp(desiredBulletYawTorque, -yawLimit, yawLimit);
 
-        state.previousLateralForce = approach(state.previousLateralForce, desiredLateralForce,
-                normalForce * (intentionalSlide ? 1.20 : 0.45) * dt);
-        state.previousBulletYawTorque = approach(state.previousBulletYawTorque, desiredBulletYawTorque,
-                normalForce * spec.wheelbaseMeters() * (intentionalSlide ? 0.95 : 0.38) * dt);
+        if (intentionalOrigin || intentionalCommandReleased) {
+            // Intentional drift follows the current input without a delayed force tail.
+            state.previousLateralForce = 0.0;
+            state.previousBulletYawTorque = intentionalSlide ? desiredBulletYawTorque : 0.0;
+        } else {
+            state.previousLateralForce = approach(state.previousLateralForce, desiredLateralForce,
+                    normalForce * 0.45 * dt);
+            state.previousBulletYawTorque = approach(state.previousBulletYawTorque, desiredBulletYawTorque,
+                    normalForce * spec.wheelbaseMeters() * 0.38 * dt);
+        }
         if (state.mode == Mode.GRIP || state.mode == Mode.LIMIT) {
             state.previousLateralForce = 0.0;
             state.previousBulletYawTorque = 0.0;
@@ -282,10 +262,10 @@ public final class LegacySlideDynamics {
 
         double wheelFrictionScale = 1.0;
         if (driftGripActive) {
-            double baseScale = switch (state.driftGripCause) {
-                case HANDBRAKE -> 0.38;
-                case CLUTCH_KICK -> 0.42;
-                case POWER -> 0.42;
+            double baseScale = switch (state.cause) {
+                case HANDBRAKE -> tuning.handbrakeWheelFrictionScale();
+                case CLUTCH_KICK -> tuning.powerWheelFrictionScale();
+                case POWER -> tuning.powerWheelFrictionScale();
                 default -> 1.0;
             };
             double intensity = clamp(tuning.driftIntensity(), 0.0, 2.0);
@@ -297,7 +277,7 @@ public final class LegacySlideDynamics {
         state.previousLongitudinalSpeedMps = speed;
         state.previousThrottle = throttle;
         state.motionInitialized = true;
-        return new Output(state.mode, state.cause, beta, expectedYaw, yawError,
+        return new Output(state.mode, state.cause, beta, driftRotation, expectedYaw, yawError,
                 frontUse, rearUse, state.slideBlend, state.controlBlend,
                 state.previousLateralForce, state.previousBulletYawTorque,
                 skidSpeed, yawSignCalibrated, intentionalSlide, driftGripActive, wheelFrictionScale);
@@ -448,25 +428,34 @@ public final class LegacySlideDynamics {
     }
 
     public record Tuning(boolean enabled, double driftIntensity, double stabilityAssist,
-            double powerDriftEntryDelaySeconds, boolean clutchKickEnabled) {
+            double powerDriftEntryDelaySeconds, boolean clutchKickEnabled,
+            double powerDriftRotation, double handbrakeDriftRotation,
+            double powerWheelFrictionScale, double handbrakeWheelFrictionScale,
+            double driftSteeringMultiplier) {
         public Tuning {
             driftIntensity = clamp(driftIntensity, 0.0, 2.0);
             stabilityAssist = clamp(stabilityAssist, 0.0, 2.0);
             powerDriftEntryDelaySeconds = clamp(powerDriftEntryDelaySeconds, 0.30, 2.0);
+            powerDriftRotation = clamp(powerDriftRotation, 0.0, 3_000.0);
+            handbrakeDriftRotation = clamp(handbrakeDriftRotation, 0.0, 3_000.0);
+            powerWheelFrictionScale = clamp(powerWheelFrictionScale, 0.25, 1.0);
+            handbrakeWheelFrictionScale = clamp(handbrakeWheelFrictionScale, 0.25, 1.0);
+            driftSteeringMultiplier = clamp(driftSteeringMultiplier, 1.0, 2.0);
         }
 
         public static Tuning defaults() {
-            return new Tuning(true, 1.0, 1.0, 0.80, true);
+            return new Tuning(true, 1.0, 1.0, 0.80, true,
+                    2_000.0, 2_000.0, 0.35, 0.35, 1.50);
         }
     }
 
     public record Input(double longitudinalSpeedMps, double lateralSpeedMps,
-            double yawRateRadiansPerSecond, double steeringAngleRadians, double throttle,
+            double yawRateRadiansPerSecond, double steeringAngleRadians, double steeringInput, double throttle,
             double serviceBrake, double handbrake, int gear, double rawDriveForce,
             double tractionLimit, double clutchKickIntensity, double rearNativeSkid,
             boolean impactDisturbance) {
         public static Input idle() {
-            return new Input(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            return new Input(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                     1, 0.0, 1.0, 0.0, 0.0, false);
         }
     }
@@ -481,11 +470,9 @@ public final class LegacySlideDynamics {
         public double steeringYawCorrelation;
         public double yawCalibrationSeconds;
         public double powerIntentSeconds;
-        public double handbrakeIntentSeconds;
         public double naturalOverloadSeconds;
         public double slideAgeSeconds;
-        public double driftGripHoldSeconds;
-        public Cause driftGripCause = Cause.NONE;
+        public boolean intentionalCommandActive;
         public double slideBlend;
         public double controlBlend;
         public double entrySteeringSign;
@@ -501,11 +488,9 @@ public final class LegacySlideDynamics {
             previousThrottle = 0.0;
             filteredLongitudinalAccelerationMps2 = 0.0;
             powerIntentSeconds = 0.0;
-            handbrakeIntentSeconds = 0.0;
             naturalOverloadSeconds = 0.0;
             slideAgeSeconds = 0.0;
-            driftGripHoldSeconds = 0.0;
-            driftGripCause = Cause.NONE;
+            intentionalCommandActive = false;
             slideBlend = 0.0;
             controlBlend = 0.0;
             entrySteeringSign = 0.0;
@@ -516,13 +501,14 @@ public final class LegacySlideDynamics {
     }
 
     public record Output(Mode mode, Cause cause, double sideSlipAngleRadians,
+            double driftRotation,
             double expectedYawRateRadiansPerSecond, double yawErrorRadiansPerSecond,
             double frontGripUse, double rearGripUse, double slideBlend, double controlBlend,
             double lateralForce, double bulletYawTorque, double skidSpeedMps,
             boolean yawSignCalibrated, boolean intentionalSlide, boolean driftGripActive,
             double wheelFrictionScale) {
         public static Output inactive() {
-            return new Output(Mode.GRIP, Cause.NONE, 0.0, 0.0, 0.0,
+            return new Output(Mode.GRIP, Cause.NONE, 0.0, 0.0, 0.0, 0.0,
                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                     false, false, false, 1.0);
         }
