@@ -52,4 +52,36 @@ public final class Patch_BaseVehicleImpulses {
             LegacyCollisionHooks.end(vehicle);
         }
     }
+
+    @Patch(className = "zombie.vehicles.BaseVehicle", methodName = "applyAllImpulsesFromProneCharacters",
+            warmUp = true, strictMatch = true)
+    public static final class ProneCharacter {
+        private ProneCharacter() {
+        }
+
+        @Patch.OnEnter
+        public static void enter(@Patch.This Object vehicle) {
+            if (CarPhysicsImprovedV1Mod.enabled()) {
+                LegacyCollisionHooks.applyProneBump(vehicle, CarPhysicsImprovedV1Mod.corpseBump());
+            }
+        }
+    }
+
+    @Patch(className = "zombie.vehicles.BaseVehicle", methodName = "updateVelocityMultiplier",
+            warmUp = true, strictMatch = true)
+    public static final class ObstacleSlowdown {
+        private ObstacleSlowdown() {
+        }
+
+        @Patch.OnEnter
+        public static void enter(@Patch.This Object vehicle) {
+            LegacyCollisionHooks.beginObstacleSlowdown(
+                    vehicle, CarPhysicsImprovedV1Mod.obstacleSlowdown());
+        }
+
+        @Patch.OnExit(onThrowable = Throwable.class)
+        public static void exit(@Patch.This Object vehicle) {
+            LegacyCollisionHooks.endObstacleSlowdown(vehicle);
+        }
+    }
 }

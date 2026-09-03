@@ -16,10 +16,25 @@ public final class RuntimeAbiSmokeTest {
         vehicle.getDeclaredMethod("applyImpulseFromHitPlant", object, float.class);
         vehicle.getDeclaredMethod("applyImpulseFromHitPedestrian", character);
         vehicle.getDeclaredMethod("applyImpulseFromHitCorpse", corpse);
+        vehicle.getDeclaredMethod("applyAllImpulsesFromProneCharacters");
+        vehicle.getDeclaredMethod("updateVelocityMultiplier");
         vehicle.getDeclaredMethod("crash", float.class, boolean.class);
         vehicle.getDeclaredField("impulsesFromHitObjects");
+        vehicle.getDeclaredField("impulsesFromSquishedBodies");
+        vehicle.getDeclaredField("breakingSlowFactor");
+        vehicle.getDeclaredField("vehicleId");
+        vehicle.getDeclaredMethod("isLocalPhysicSim");
+        vehicle.getDeclaredMethod("getFudgedMass");
         Class<?> impulse = Class.forName("zombie.vehicles.BaseVehicle$VehicleImpulse", false, loader);
         impulse.getDeclaredField("impulse");
+        impulse.getDeclaredField("relPos");
+        impulse.getDeclaredField("enable");
+        impulse.getDeclaredField("applied");
+        Class<?> bullet = Class.forName("zombie.core.physics.Bullet", false, loader);
+        bullet.getDeclaredMethod("applyCentralForceToVehicle",
+                int.class, float.class, float.class, float.class);
+        bullet.getDeclaredMethod("applyTorqueToVehicle",
+                int.class, float.class, float.class, float.class);
         Class<?> container = Class.forName("zombie.inventory.ItemContainer", false, loader);
         container.getDeclaredMethod("getCapacity");
         container.getDeclaredMethod("getVehicle");
@@ -62,6 +77,14 @@ public final class RuntimeAbiSmokeTest {
                 || LegacyHooks.manualGearAfterShift(0, -1, 5) != -1
                 || LegacyHooks.manualGearAfterShift(5, 1, 5) != 5) {
             throw new AssertionError("manual R-N-1-2 selector is not bounded");
+        }
+        CarPhysicsImprovedV1Mod.configureObstacleSlowdown(0.35);
+        if (CarPhysicsImprovedV1Mod.obstacleSlowdown() != 0.35) {
+            throw new AssertionError("separate obstacle slowdown option was not applied");
+        }
+        CarPhysicsImprovedV1Mod.configureCorpseBump(0.65);
+        if (CarPhysicsImprovedV1Mod.corpseBump() != 0.65) {
+            throw new AssertionError("separate corpse bump option was not applied");
         }
         CarPhysicsImprovedV1Mod.configureSlide(
                 true, 1.2, 0.8, 1.1, false,

@@ -405,6 +405,8 @@ local function applyOptions()
         sandboxValue("PlantImpulse", 0.3),
         sandboxValue("ZombieImpulse", 0.5),
         sandboxValue("CorpseImpulse", 1.0))
+    callJava("configureCorpseBump", sandboxValue("CorpseBump", 1.0))
+    callJava("configureObstacleSlowdown", sandboxValue("ObstacleSlowdown", 0.3))
     callJava("configureTrunk",
         sandboxBool("TrunkOverhaul", false),
         sandboxValue("TrunkMultiplier", 1.0),

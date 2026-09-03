@@ -20,10 +20,11 @@ $zombieBuddyJar = Join-Path $gameRoot 'ZombieBuddy.jar'
 $gameJava = Join-Path $gameRoot 'jre64\bin\java.exe'
 $workshopRoot = Split-Path -Parent $projectRoot
 $clientLua = Join-Path $workshopRoot 'Contents\mods\CarPhysicsImprovedV1B42\42\media\lua\client\CarPhysicsImprovedV1\CPI_V1_Client.lua'
+$tireDebugLua = Join-Path $workshopRoot 'Contents\mods\CarPhysicsImprovedV1B42\42\media\lua\client\CarPhysicsImprovedV1\CPI_V1_TireDebug.lua'
 $apiLua = Join-Path $workshopRoot 'Contents\mods\CarPhysicsImprovedV1B42\42\media\lua\shared\CarPhysicsImprovedV1\API.lua'
 
 foreach ($required in @($buildScript, $mainSourceRoot, $testSourceRoot, $javac, $java,
-        $gameJar, $zombieBuddyJar, $gameJava, $clientLua, $apiLua)) {
+        $gameJar, $zombieBuddyJar, $gameJava, $clientLua, $tireDebugLua, $apiLua)) {
     if (-not (Test-Path -LiteralPath $required)) {
         throw "Required test input is missing: $required"
     }
@@ -73,9 +74,19 @@ if ($LASTEXITCODE -ne 0) {
     throw "LegacyTireEffectsTest failed with exit code $LASTEXITCODE"
 }
 
+& $java '-cp' $testClasses 'dev.carphysicsimproved.v1.physics.LegacyTireConditionTest'
+if ($LASTEXITCODE -ne 0) {
+    throw "LegacyTireConditionTest failed with exit code $LASTEXITCODE"
+}
+
 & $java '-cp' $testClasses 'dev.carphysicsimproved.v1.runtime.LegacyTireTrackRendererTest'
 if ($LASTEXITCODE -ne 0) {
     throw "LegacyTireTrackRendererTest failed with exit code $LASTEXITCODE"
+}
+
+& $java '-cp' $testClasses 'dev.carphysicsimproved.v1.runtime.ProneImpulseLimiterTest'
+if ($LASTEXITCODE -ne 0) {
+    throw "ProneImpulseLimiterTest failed with exit code $LASTEXITCODE"
 }
 
 $runtimeClasspath = $testClasses + [System.IO.Path]::PathSeparator + $zombieBuddyJar + `
@@ -86,7 +97,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 & $gameJava '-cp' $runtimeClasspath 'dev.carphysicsimproved.v1.runtime.LuaSyntaxSmokeTest' `
-    $clientLua $apiLua
+    $clientLua $tireDebugLua $apiLua
 if ($LASTEXITCODE -ne 0) {
     throw "LuaSyntaxSmokeTest failed with exit code $LASTEXITCODE"
 }

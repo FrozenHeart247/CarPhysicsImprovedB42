@@ -57,7 +57,7 @@ public final class LegacyPhysics {
         }
 
         double pressure = clamp(conditions.tirePressure(), 0.0, 1.35);
-        double conditionGrip = clamp(conditions.tireCondition(), 0.0, 1.25) * 0.5 + 0.5;
+        double conditionGrip = clamp(conditions.tireConditionGrip(), 0.0, 1.25);
         double tireTraction = conditionGrip * settings.overallTraction();
         tireTraction *= clamp(conditions.surfaceGrip(), 0.1, 1.0);
         tireTraction = clamp(tireTraction, 0.05, 1.8);
@@ -298,7 +298,7 @@ public final class LegacyPhysics {
         }
     }
 
-    public record Conditions(double tirePressure, double tireCondition, double surfaceGrip,
+    public record Conditions(double tirePressure, double tireConditionGrip, double surfaceGrip,
             boolean offroad, double offroadResistanceScale) {
         public Conditions {
             offroadResistanceScale = clamp(offroadResistanceScale, 0.10, 1.0);

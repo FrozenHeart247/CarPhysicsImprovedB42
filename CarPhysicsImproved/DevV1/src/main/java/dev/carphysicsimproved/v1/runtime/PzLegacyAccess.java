@@ -3,6 +3,7 @@ package dev.carphysicsimproved.v1.runtime;
 import dev.carphysicsimproved.v1.physics.LegacyPhysics;
 import dev.carphysicsimproved.v1.physics.LegacySlideDynamics;
 import dev.carphysicsimproved.v1.physics.LegacyTerrainDynamics;
+import dev.carphysicsimproved.v1.physics.LegacyTireCondition;
 import pzmod.carphysicsimproved.v1.CarPhysicsImprovedV1Mod;
 
 import java.lang.reflect.Array;
@@ -281,11 +282,11 @@ final class PzLegacyAccess {
         Object script = snapshot.scriptIdentity;
         int wheelCount = Math.max(0, ((Number) invoke(scriptWheelCount, script)).intValue());
         double pressure = 0.0;
-        double condition = 0.0;
+        double conditionGrip = 0.0;
         double frontPressure = 0.0;
         double rearPressure = 0.0;
-        double frontCondition = 0.0;
-        double rearCondition = 0.0;
+        double frontConditionGrip = 0.0;
+        double rearConditionGrip = 0.0;
         int frontCount = 0;
         int rearCount = 0;
         for (int index = 0; index < wheelCount; index++) {
@@ -307,29 +308,31 @@ final class PzLegacyAccess {
             }
             double capacity = Math.max(1.0, ((Number) invoke(partCapacity, part)).doubleValue());
             double wheelPressure = clamp(((Number) invoke(partContent, part)).doubleValue() / capacity, 0.0, 1.35);
-            double wheelCondition = clamp(((Number) invoke(partCondition, part)).doubleValue(), 0.0, 100.0)
-                    * clamp(((Number) invoke(itemWheelFriction, item)).doubleValue(), 0.0, 2.0) * 0.01;
+            double durability = clamp(((Number) invoke(partCondition, part)).doubleValue(), 0.0, 100.0) * 0.01;
+            double wheelConditionGrip = LegacyTireCondition.gripMultiplier(
+                    durability,
+                    ((Number) invoke(itemWheelFriction, item)).doubleValue());
             pressure += wheelPressure;
-            condition += wheelCondition;
+            conditionGrip += wheelConditionGrip;
             if (front) {
                 frontPressure += wheelPressure;
-                frontCondition += wheelCondition;
+                frontConditionGrip += wheelConditionGrip;
             } else {
                 rearPressure += wheelPressure;
-                rearCondition += wheelCondition;
+                rearConditionGrip += wheelConditionGrip;
             }
         }
         if (wheelCount > 0) {
             pressure /= wheelCount;
-            condition /= wheelCount;
+            conditionGrip /= wheelCount;
         } else {
             pressure = 1.0;
-            condition = 1.0;
+            conditionGrip = 1.0;
         }
         frontPressure = frontCount == 0 ? pressure : frontPressure / frontCount;
         rearPressure = rearCount == 0 ? pressure : rearPressure / rearCount;
-        frontCondition = frontCount == 0 ? condition : frontCondition / frontCount;
-        rearCondition = rearCount == 0 ? condition : rearCondition / rearCount;
+        frontConditionGrip = frontCount == 0 ? conditionGrip : frontConditionGrip / frontCount;
+        rearConditionGrip = rearCount == 0 ? conditionGrip : rearConditionGrip / rearCount;
 
         boolean offroad = (Boolean) invoke(vehicleOffroad, vehicle);
         boolean forest = (Boolean) invoke(vehicleForest, vehicle);
@@ -350,11 +353,11 @@ final class PzLegacyAccess {
                 CarPhysicsImprovedV1Mod.terrainTuning());
         double surfaceGrip = terrain.surfaceGrip();
         LegacyPhysics.Conditions longitudinal = new LegacyPhysics.Conditions(
-                pressure, condition, surfaceGrip, offroad, terrain.offroadResistanceScale());
+                pressure, conditionGrip, surfaceGrip, offroad, terrain.offroadResistanceScale());
         double overall = CarPhysicsImprovedV1Mod.settings().overallTraction();
         LegacySlideDynamics.AxleGrip lateral = new LegacySlideDynamics.AxleGrip(
-                axleGrip(frontPressure, frontCondition, surfaceGrip, overall),
-                axleGrip(rearPressure, rearCondition, surfaceGrip, overall));
+                axleGrip(frontPressure, frontConditionGrip, surfaceGrip, overall),
+                axleGrip(rearPressure, rearConditionGrip, surfaceGrip, overall));
         return new ConditionSnapshot(longitudinal, lateral, terrain);
     }
 
@@ -594,14 +597,15 @@ final class PzLegacyAccess {
         }
     }
 
-    private static double axleGrip(double pressure, double condition, double surfaceGrip, double overallTraction) {
-        if (pressure <= 0.02 || condition <= 0.0) {
+    private static double axleGrip(double pressure, double conditionGrip, double surfaceGrip,
+            double overallTraction) {
+        if (pressure <= 0.02 || conditionGrip <= 0.0) {
             return 0.08;
         }
         double pressureGrip = pressure < 0.85
                 ? lerp(0.52, 1.0, clamp(pressure / 0.85, 0.0, 1.0))
                 : lerp(1.0, 0.84, clamp((pressure - 1.10) / 0.25, 0.0, 1.0));
-        return clamp((0.5 + 0.5 * clamp(condition, 0.0, 1.25))
+        return clamp(clamp(conditionGrip, 0.0, 1.25)
                 * pressureGrip * surfaceGrip * overallTraction, 0.08, 1.8);
     }
 

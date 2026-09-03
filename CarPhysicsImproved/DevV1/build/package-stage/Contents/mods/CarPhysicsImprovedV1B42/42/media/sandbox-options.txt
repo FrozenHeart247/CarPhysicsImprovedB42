@@ -74,6 +74,10 @@ option CarPhysicsImprovedV1B42.ZombieImpulse
 { type = double, min = 0, max = 10, default = 0.5, page = CPI_V1_Impulses, translation = CPI_V1_ZombieImpulse, }
 option CarPhysicsImprovedV1B42.CorpseImpulse
 { type = double, min = 0, max = 10, default = 1, page = CPI_V1_Impulses, translation = CPI_V1_CorpseImpulse, }
+option CarPhysicsImprovedV1B42.CorpseBump
+{ type = double, min = 0, max = 3, default = 1, page = CPI_V1_Impulses, translation = CPI_V1_CorpseBump, }
+option CarPhysicsImprovedV1B42.ObstacleSlowdown
+{ type = double, min = 0, max = 2, default = 0.3, page = CPI_V1_Impulses, translation = CPI_V1_ObstacleSlowdown, }
 
 option CarPhysicsImprovedV1B42.TrunkOverhaul
 { type = boolean, default = false, page = CPI_V1_Cargo, translation = CPI_V1_TrunkOverhaul, }

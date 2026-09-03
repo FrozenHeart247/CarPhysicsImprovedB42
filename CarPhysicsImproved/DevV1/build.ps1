@@ -67,11 +67,15 @@ $requiredEntries = @(
     'pzmod/carphysicsimproved/v1/Patch_WorldSimulation.class',
     'pzmod/carphysicsimproved/v1/Patch_BaseVehicle.class',
     'pzmod/carphysicsimproved/v1/Patch_BaseVehicleImpulses$Plant.class',
+    'pzmod/carphysicsimproved/v1/Patch_BaseVehicleImpulses$ProneCharacter.class',
+    'pzmod/carphysicsimproved/v1/Patch_BaseVehicleImpulses$ObstacleSlowdown.class',
     'pzmod/carphysicsimproved/v1/Patch_ItemContainer.class',
     'pzmod/carphysicsimproved/v1/Patch_FBORenderChunkManager.class',
     'dev/carphysicsimproved/v1/physics/LegacyPhysics.class',
     'dev/carphysicsimproved/v1/physics/LegacySlideDynamics.class',
     'dev/carphysicsimproved/v1/physics/LegacyTerrainDynamics.class',
+    'dev/carphysicsimproved/v1/physics/LegacyTireCondition.class',
+    'dev/carphysicsimproved/v1/runtime/ProneImpulseLimiter.class',
     'dev/carphysicsimproved/v1/runtime/LegacyTireTrackRenderer.class'
 )
 foreach ($entry in $requiredEntries) {

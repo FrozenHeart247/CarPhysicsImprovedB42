@@ -25,6 +25,8 @@ public final class CarPhysicsImprovedV1Mod {
     private static volatile double plantImpulse = 0.30;
     private static volatile double zombieImpulse = 0.50;
     private static volatile double corpseImpulse = 1.0;
+    private static volatile double corpseBump = 1.0;
+    private static volatile double obstacleSlowdown = 0.30;
     private static volatile boolean trunkOverhaul;
     private static volatile double trunkMultiplier = 1.0;
     private static volatile double trunkAdder;
@@ -141,6 +143,14 @@ public final class CarPhysicsImprovedV1Mod {
         plantImpulse = clamp(plant, 0.0, 10.0);
         zombieImpulse = clamp(zombie, 0.0, 10.0);
         corpseImpulse = clamp(corpse, 0.0, 10.0);
+    }
+
+    public static void configureObstacleSlowdown(double multiplier) {
+        obstacleSlowdown = clamp(multiplier, 0.0, 10.0);
+    }
+
+    public static void configureCorpseBump(double multiplier) {
+        corpseBump = clamp(multiplier, 0.0, 10.0);
     }
 
     public static void configureTrunk(boolean enabledValue, double multiplier, double adder,
@@ -268,6 +278,14 @@ public final class CarPhysicsImprovedV1Mod {
 
     public static double corpseImpulse() {
         return corpseImpulse;
+    }
+
+    public static double corpseBump() {
+        return corpseBump;
+    }
+
+    public static double obstacleSlowdown() {
+        return obstacleSlowdown;
     }
 
     public static boolean trunkOverhaul() {
