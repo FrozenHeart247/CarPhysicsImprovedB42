@@ -16,7 +16,7 @@ $liveJar = Join-Path $liveMod '42\media\java\car-physics-improved-v1.jar'
 $stageRoot = Join-Path $devRoot 'build\package-stage'
 $stageMod = Join-Path $stageRoot 'Contents\mods\CarPhysicsImprovedV1B42'
 $releaseRoot = Join-Path $devRoot 'build\release'
-$release = Join-Path $releaseRoot 'CarPhysicsImprovedV1B42-0.2.9-dev-workshop.zip'
+$release = Join-Path $releaseRoot 'CarPhysicsImprovedV1B42-0.3.1-dev-workshop.zip'
 
 function Assert-ChildPath {
     param([string] $Root, [string] $Candidate)

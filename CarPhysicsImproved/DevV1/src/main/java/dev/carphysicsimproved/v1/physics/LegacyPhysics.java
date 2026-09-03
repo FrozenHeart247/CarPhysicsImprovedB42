@@ -195,7 +195,7 @@ public final class LegacyPhysics {
         if (conditions.offroad()) {
             double rolling = settings.offroadRollingResistance()
                     + 0.01 * absoluteSpeedKph * settings.offroadRollingResistanceSpeed();
-            rolling *= spec.massKg * (1.0 + pressure * 0.6) / Math.max(0.15, spec.offroadEfficiency);
+            rolling *= spec.massKg * (1.0 + pressure * 0.6) * conditions.offroadResistanceScale();
             drag += rolling;
         } else {
             double rolling = settings.rollingResistance()
@@ -298,7 +298,15 @@ public final class LegacyPhysics {
         }
     }
 
-    public record Conditions(double tirePressure, double tireCondition, double surfaceGrip, boolean offroad) {
+    public record Conditions(double tirePressure, double tireCondition, double surfaceGrip,
+            boolean offroad, double offroadResistanceScale) {
+        public Conditions {
+            offroadResistanceScale = clamp(offroadResistanceScale, 0.10, 1.0);
+        }
+
+        public Conditions(double tirePressure, double tireCondition, double surfaceGrip, boolean offroad) {
+            this(tirePressure, tireCondition, surfaceGrip, offroad, 1.0);
+        }
     }
 
     public record Input(double longitudinalSpeedMps, boolean engineRunning, boolean forwardDemand,

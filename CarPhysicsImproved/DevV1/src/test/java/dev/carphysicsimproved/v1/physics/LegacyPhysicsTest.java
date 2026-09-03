@@ -125,9 +125,27 @@ public final class LegacyPhysicsTest {
                 highSteeringState, 0.05);
         check(Math.abs(highSteering.steeringRadians()) < Math.abs(lowSteering.steeringRadians()),
                 "high-speed steering must build more slowly");
+
+        LegacyPhysics.Output dryRoadDefault = LegacyPhysics.step(sport, road, settings,
+                input(15.0, true, false, 2), warmedState(2), 0.05);
+        LegacyPhysics.Output dryRoadTerrainProfile = LegacyPhysics.step(sport,
+                new LegacyPhysics.Conditions(1.0, 1.0, 1.0, false, 0.55), settings,
+                input(15.0, true, false, 2), warmedState(2), 0.05);
+        check(dryRoadDefault.dragMagnitude() == dryRoadTerrainProfile.dragMagnitude(),
+                "terrain profile must not alter rolling resistance on dry asphalt");
+
+        LegacyPhysics.Output ordinaryOffroad = LegacyPhysics.step(sport,
+                new LegacyPhysics.Conditions(1.0, 1.0, 0.60, true, 1.0), settings,
+                input(15.0, true, false, 2), warmedState(2), 0.05);
+        LegacyPhysics.Output heavyOffroad = LegacyPhysics.step(sport,
+                new LegacyPhysics.Conditions(1.0, 1.0, 0.84, true, 0.55), settings,
+                input(15.0, true, false, 2), warmedState(2), 0.05);
+        check(heavyOffroad.dragMagnitude() < ordinaryOffroad.dragMagnitude(),
+                "terrain profile must reduce only the off-road rolling penalty");
         checkFinite(firstGear, fifthGear, highSpeed, coast, coastRpm, burnout, good, bad, reverseLimited,
                 neutralDrop, fifthGearDrop, disabledKick,
-                lowSteering, highSteering);
+                lowSteering, highSteering, dryRoadDefault, dryRoadTerrainProfile,
+                ordinaryOffroad, heavyOffroad);
         System.out.println("LegacyPhysicsTest: all legacy drivetrain invariants passed");
     }
 

@@ -3,6 +3,7 @@ package pzmod.carphysicsimproved.v1;
 import dev.carphysicsimproved.v1.BuildInfo;
 import dev.carphysicsimproved.v1.physics.LegacyPhysics;
 import dev.carphysicsimproved.v1.physics.LegacySlideDynamics;
+import dev.carphysicsimproved.v1.physics.LegacyTerrainDynamics;
 import me.zed_0xff.zombie_buddy.Exposer;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,9 +20,7 @@ public final class CarPhysicsImprovedV1Mod {
     private static volatile boolean telemetry;
     private static volatile LegacyPhysics.Settings settings = LegacyPhysics.Settings.defaults();
     private static volatile LegacySlideDynamics.Tuning slideTuning = LegacySlideDynamics.Tuning.defaults();
-    private static volatile double rainTraction = 0.70;
-    private static volatile double snowTraction = 0.40;
-    private static volatile double offroadTraction = 0.60;
+    private static volatile LegacyTerrainDynamics.Tuning terrainTuning = LegacyTerrainDynamics.Tuning.defaults();
     private static volatile double plantImpulse = 0.30;
     private static volatile double zombieImpulse = 0.50;
     private static volatile double corpseImpulse = 1.0;
@@ -81,9 +80,26 @@ public final class CarPhysicsImprovedV1Mod {
                 clamp(overallTraction, 0.0, 10.0),
                 clamp(accelerationTraction, 0.0, 10.0),
                 1.0, 0.1, 1.0, 0.1, 3.0, 75.0, 2_000.0, 800.0);
-        offroadTraction = clamp(requestedOffroadTraction, 0.0, 1.0);
-        rainTraction = clamp(requestedRainTraction, 0.0, 1.0);
-        snowTraction = clamp(requestedSnowTraction, 0.0, 1.0);
+        LegacyTerrainDynamics.Tuning currentTerrain = terrainTuning;
+        terrainTuning = new LegacyTerrainDynamics.Tuning(
+                requestedOffroadTraction,
+                requestedRainTraction,
+                requestedSnowTraction,
+                currentTerrain.heavyOffroadAdvantage(),
+                currentTerrain.heavyRainAdvantage(),
+                currentTerrain.heavySnowAdvantage(),
+                currentTerrain.heavyOffroadResistanceScale(),
+                currentTerrain.nativeFrictionInfluence());
+    }
+
+    public static void configureTerrain(double heavyOffroadAdvantage, double heavyRainAdvantage,
+            double heavySnowAdvantage, double heavyOffroadResistanceScale,
+            double nativeFrictionInfluence) {
+        LegacyTerrainDynamics.Tuning current = terrainTuning;
+        terrainTuning = new LegacyTerrainDynamics.Tuning(
+                current.offroadTraction(), current.rainTraction(), current.snowTraction(),
+                heavyOffroadAdvantage, heavyRainAdvantage, heavySnowAdvantage,
+                heavyOffroadResistanceScale, nativeFrictionInfluence);
     }
 
     public static void configureSteering(double factorLowSpeed, double factorHighSpeed,
@@ -205,15 +221,19 @@ public final class CarPhysicsImprovedV1Mod {
     }
 
     public static double rainTraction() {
-        return rainTraction;
+        return terrainTuning.rainTraction();
     }
 
     public static double snowTraction() {
-        return snowTraction;
+        return terrainTuning.snowTraction();
     }
 
     public static double offroadTraction() {
-        return offroadTraction;
+        return terrainTuning.offroadTraction();
+    }
+
+    public static LegacyTerrainDynamics.Tuning terrainTuning() {
+        return terrainTuning;
     }
 
     public static double plantImpulse() {

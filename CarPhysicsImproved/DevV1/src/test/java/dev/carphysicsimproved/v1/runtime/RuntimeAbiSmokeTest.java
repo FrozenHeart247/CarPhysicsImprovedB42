@@ -56,6 +56,15 @@ public final class RuntimeAbiSmokeTest {
                 || slide.driftSteeringMultiplier() != 1.65) {
             throw new AssertionError("Lua-facing slide Sandbox profile was not applied atomically");
         }
+        CarPhysicsImprovedV1Mod.configureTerrain(0.70, 0.50, 0.80, 0.40, 0.60);
+        var terrain = CarPhysicsImprovedV1Mod.terrainTuning();
+        if (terrain.heavyOffroadAdvantage() != 0.70
+                || terrain.heavyRainAdvantage() != 0.50
+                || terrain.heavySnowAdvantage() != 0.80
+                || terrain.heavyOffroadResistanceScale() != 0.40
+                || terrain.nativeFrictionInfluence() != 0.60) {
+            throw new AssertionError("Lua-facing terrain Sandbox profile was not applied atomically");
+        }
         System.out.println("RuntimeAbiSmokeTest: B42.20.4 legacy adapter constructed successfully");
     }
 }

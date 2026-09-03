@@ -18,8 +18,12 @@ $gameRoot = [System.IO.Path]::GetFullPath($GameDirectory)
 $gameJar = Join-Path $gameRoot 'projectzomboid.jar'
 $zombieBuddyJar = Join-Path $gameRoot 'ZombieBuddy.jar'
 $gameJava = Join-Path $gameRoot 'jre64\bin\java.exe'
+$workshopRoot = Split-Path -Parent $projectRoot
+$clientLua = Join-Path $workshopRoot 'Contents\mods\CarPhysicsImprovedV1B42\42\media\lua\client\CarPhysicsImprovedV1\CPI_V1_Client.lua'
+$apiLua = Join-Path $workshopRoot 'Contents\mods\CarPhysicsImprovedV1B42\42\media\lua\shared\CarPhysicsImprovedV1\API.lua'
 
-foreach ($required in @($buildScript, $mainSourceRoot, $testSourceRoot, $javac, $java, $gameJar, $zombieBuddyJar, $gameJava)) {
+foreach ($required in @($buildScript, $mainSourceRoot, $testSourceRoot, $javac, $java,
+        $gameJar, $zombieBuddyJar, $gameJava, $clientLua, $apiLua)) {
     if (-not (Test-Path -LiteralPath $required)) {
         throw "Required test input is missing: $required"
     }
@@ -59,6 +63,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "LegacySlideDynamicsTest failed with exit code $LASTEXITCODE"
 }
 
+& $java '-cp' $testClasses 'dev.carphysicsimproved.v1.physics.LegacyTerrainDynamicsTest'
+if ($LASTEXITCODE -ne 0) {
+    throw "LegacyTerrainDynamicsTest failed with exit code $LASTEXITCODE"
+}
+
 $runtimeClasspath = $testClasses + [System.IO.Path]::PathSeparator + $zombieBuddyJar + `
     [System.IO.Path]::PathSeparator + $gameJar
 & $gameJava '-cp' $runtimeClasspath 'dev.carphysicsimproved.v1.runtime.RuntimeAbiSmokeTest'
@@ -66,4 +75,10 @@ if ($LASTEXITCODE -ne 0) {
     throw "RuntimeAbiSmokeTest failed with exit code $LASTEXITCODE"
 }
 
-Write-Host 'All V1 model tests and the installed-game ABI smoke test passed.'
+& $gameJava '-cp' $runtimeClasspath 'dev.carphysicsimproved.v1.runtime.LuaSyntaxSmokeTest' `
+    $clientLua $apiLua
+if ($LASTEXITCODE -ne 0) {
+    throw "LuaSyntaxSmokeTest failed with exit code $LASTEXITCODE"
+}
+
+Write-Host 'All V1 drivetrain, slide, terrain, Lua syntax and installed-game ABI tests passed.'

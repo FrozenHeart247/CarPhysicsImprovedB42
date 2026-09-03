@@ -69,7 +69,8 @@ $requiredEntries = @(
     'pzmod/carphysicsimproved/v1/Patch_BaseVehicleImpulses$Plant.class',
     'pzmod/carphysicsimproved/v1/Patch_ItemContainer.class',
     'dev/carphysicsimproved/v1/physics/LegacyPhysics.class',
-    'dev/carphysicsimproved/v1/physics/LegacySlideDynamics.class'
+    'dev/carphysicsimproved/v1/physics/LegacySlideDynamics.class',
+    'dev/carphysicsimproved/v1/physics/LegacyTerrainDynamics.class'
 )
 foreach ($entry in $requiredEntries) {
     if ($entries -cnotcontains $entry) {

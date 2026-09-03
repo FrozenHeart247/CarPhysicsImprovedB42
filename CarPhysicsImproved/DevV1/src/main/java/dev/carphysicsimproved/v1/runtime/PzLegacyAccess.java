@@ -2,6 +2,7 @@ package dev.carphysicsimproved.v1.runtime;
 
 import dev.carphysicsimproved.v1.physics.LegacyPhysics;
 import dev.carphysicsimproved.v1.physics.LegacySlideDynamics;
+import dev.carphysicsimproved.v1.physics.LegacyTerrainDynamics;
 import pzmod.carphysicsimproved.v1.CarPhysicsImprovedV1Mod;
 
 import java.lang.reflect.Array;
@@ -332,34 +333,29 @@ final class PzLegacyAccess {
 
         boolean offroad = (Boolean) invoke(vehicleOffroad, vehicle);
         boolean forest = (Boolean) invoke(vehicleForest, vehicle);
-        double grip = 1.0;
         Object climate = invoke(climateInstance, null);
         double rain = climate == null ? 0.0
                 : clamp(((Number) invoke(climateRain, climate)).doubleValue(), 0.0, 1.0);
         double snow = climate == null ? 0.0
                 : clamp(((Number) invoke(climateSnow, climate)).doubleValue(), 0.0, 1.0);
-        if (snow > 0.5) {
-            double loss = (1.0 - CarPhysicsImprovedV1Mod.snowTraction()) * clamp(snow, 0.0, 1.0);
-            grip *= (1.0 - loss) * snapshot.spec().offroadEfficiency();
-        }
-        if (offroad) {
-            double loss = (1.0 - CarPhysicsImprovedV1Mod.offroadTraction()) * (0.5 + pressure * 0.5);
-            grip *= (1.0 - loss) * snapshot.spec().offroadEfficiency();
-        }
-        if (forest) {
-            grip *= 0.80;
-        }
-        if (rain > 0.01) {
-            grip *= lerp(1.0, CarPhysicsImprovedV1Mod.rainTraction(), rain);
-        }
-        double surfaceGrip = clamp(grip, 0.1, 1.0);
+        LegacyTerrainDynamics.Output terrain = LegacyTerrainDynamics.evaluate(
+                new LegacyTerrainDynamics.Input(
+                        snapshot.spec().mechanicType(),
+                        snapshot.spec().offroadEfficiency(),
+                        pressure,
+                        rain,
+                        snow,
+                        offroad,
+                        forest),
+                CarPhysicsImprovedV1Mod.terrainTuning());
+        double surfaceGrip = terrain.surfaceGrip();
         LegacyPhysics.Conditions longitudinal = new LegacyPhysics.Conditions(
-                pressure, condition, surfaceGrip, offroad);
+                pressure, condition, surfaceGrip, offroad, terrain.offroadResistanceScale());
         double overall = CarPhysicsImprovedV1Mod.settings().overallTraction();
         LegacySlideDynamics.AxleGrip lateral = new LegacySlideDynamics.AxleGrip(
                 axleGrip(frontPressure, frontCondition, surfaceGrip, overall),
                 axleGrip(rearPressure, rearCondition, surfaceGrip, overall));
-        return new ConditionSnapshot(longitudinal, lateral);
+        return new ConditionSnapshot(longitudinal, lateral, terrain);
     }
 
     Controls controls(Object controller, Object vehicle) throws ReflectiveOperationException {
@@ -671,7 +667,8 @@ final class PzLegacyAccess {
     record Snapshot(Object scriptIdentity, LegacyPhysics.Spec spec, LegacySlideDynamics.Spec slideSpec) {
     }
 
-    record ConditionSnapshot(LegacyPhysics.Conditions longitudinal, LegacySlideDynamics.AxleGrip lateral) {
+    record ConditionSnapshot(LegacyPhysics.Conditions longitudinal, LegacySlideDynamics.AxleGrip lateral,
+            LegacyTerrainDynamics.Output terrain) {
     }
 
     record AxleSkid(double front, double rear) {

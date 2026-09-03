@@ -144,7 +144,10 @@ public final class LegacyHooks {
                 runtime.slide.reset();
                 slideOutput = LegacySlideDynamics.Output.inactive();
             }
-            current.applyWheelFrictionScale(vehicle, slideOutput.wheelFrictionScale());
+            double appliedWheelFrictionScale = Math.min(
+                    slideOutput.wheelFrictionScale(),
+                    runtime.conditions.terrain().nativeWheelFrictionScale());
+            current.applyWheelFrictionScale(vehicle, appliedWheelFrictionScale);
             double driftSteeringMultiplier = slideOutput.intentionalSlide()
                     ? slideTuning.driftSteeringMultiplier() : 1.0;
             double appliedSteering = clamp(
@@ -179,6 +182,13 @@ public final class LegacyHooks {
                         + "/" + Math.round(output.rawDriveForce())
                         + " brake=" + round(output.brakingForce(), 1)
                         + " traction=" + round(output.tireTraction(), 2)
+                        + " terrain=" + runtime.conditions.terrain().profile()
+                        + " envGrip=" + round(runtime.conditions.terrain().surfaceGrip(), 2)
+                        + " envDrag=" + round(runtime.conditions.terrain().offroadResistanceScale(), 2)
+                        + " envWheelGrip=" + round(runtime.conditions.terrain().nativeWheelFrictionScale(), 2)
+                        + " rain=" + round(runtime.conditions.terrain().rainIntensity(), 2)
+                        + " snow=" + round(runtime.conditions.terrain().snowIntensity(), 2)
+                        + " offroad=" + runtime.conditions.terrain().offroad()
                         + " burnout=" + round(output.burnoutSpeedKph(), 1)
                         + " drag=" + Math.round(output.dragMagnitude())
                         + " steer=" + round(output.steeringRadians(), 3)
@@ -193,7 +203,7 @@ public final class LegacyHooks {
                         + ":" + slideOutput.cause()
                         + " active=" + slideOutput.intentionalSlide()
                         + " blend=" + round(slideOutput.slideBlend(), 2)
-                        + " wheelGrip=" + round(slideOutput.wheelFrictionScale(), 2)
+                        + " wheelGrip=" + round(appliedWheelFrictionScale, 2)
                         + " lat=" + Math.round(slideOutput.lateralForce())
                         + " yawCmd=" + Math.round(slideOutput.bulletYawTorque())
                         + " clutch=" + round(output.clutchKickIntensity(), 2)

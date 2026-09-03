@@ -13,14 +13,16 @@ end
 local enabled = options:addTickBox("Enabled", "Enable V1 legacy physics", true,
     "Disables only V1; the vanilla controller remains available.")
 local manual = options:addTickBox("ManualTransmission", "Manual transmission", false,
-    "Use Shift Up/Down to select R, N and forward gears.")
+    "Use the exact key and modifier combinations configured below to select R, N and forward gears.")
 local telemetry = options:addTickBox("Telemetry", "Physics telemetry in console.txt", false,
     "Prints a V1 diagnostic line every two seconds while driving.")
 local skidSound = options:addTickBox("SkidSound", "Burnout and skid sound", true,
     "Uses the new CPI tire loop; no audio from the reference mod is included.")
-local shiftUp = options:addKeyBind("ShiftUp", "Shift up", Keyboard.KEY_UP,
+local SHIFT_UP_BINDING = "Shift up"
+local SHIFT_DOWN_BINDING = "Shift down"
+local shiftUp = options:addKeyBind("ShiftUp", SHIFT_UP_BINDING, Keyboard.KEY_UP,
     "Used only with Manual transmission.")
-local shiftDown = options:addKeyBind("ShiftDown", "Shift down", Keyboard.KEY_DOWN,
+local shiftDown = options:addKeyBind("ShiftDown", SHIFT_DOWN_BINDING, Keyboard.KEY_DOWN,
     "Used only with Manual transmission.")
 
 local steeringFactorLow = options:addSlider("SteeringFactorLow", "Steering input: low speed", 0, 3, 0.05, 1.0,
@@ -37,6 +39,56 @@ local steeringHighSpeed = options:addSlider("SteeringHighSpeed", "High-speed ref
     "Speed at which the high-speed steering factors are fully applied.")
 
 local activeSounds = {}
+local keyModifiers = {}
+
+local function emptyModifiers()
+    return { shift = false, ctrl = false, alt = false }
+end
+
+local function refreshKeyModifiers()
+    keyModifiers[SHIFT_UP_BINDING] = emptyModifiers()
+    keyModifiers[SHIFT_DOWN_BINDING] = emptyModifiers()
+    local found = {}
+    local ok, reader = pcall(getFileReader, "keysB42.ini", true)
+    if ok and reader then
+        while true do
+            local line = reader:readLine()
+            if not line then break end
+            local name, definition = line:match("^([^=]+)=(.+)$")
+            if keyModifiers[name] then
+                keyModifiers[name] = {
+                    shift = definition:find("shift:true", 1, true) ~= nil,
+                    ctrl = definition:find("ctrl:true", 1, true) ~= nil,
+                    alt = definition:find("alt:true", 1, true) ~= nil,
+                }
+                found[name] = true
+            end
+        end
+        reader:close()
+    end
+
+    -- While the options screen is open, its element is the freshest source.
+    local function useElementWhenFileHasNoEntry(name, option)
+        local element = option and option.element
+        if not found[name] and element then
+            keyModifiers[name] = {
+                shift = element.shift == true,
+                ctrl = element.ctrl == true,
+                alt = element.alt == true,
+            }
+        end
+    end
+    useElementWhenFileHasNoEntry(SHIFT_UP_BINDING, shiftUp)
+    useElementWhenFileHasNoEntry(SHIFT_DOWN_BINDING, shiftDown)
+end
+
+local function modifiersMatch(expected)
+    expected = expected or emptyModifiers()
+    local shift = Keyboard.isKeyDown(Keyboard.KEY_LSHIFT) or Keyboard.isKeyDown(Keyboard.KEY_RSHIFT)
+    local ctrl = Keyboard.isKeyDown(Keyboard.KEY_LCONTROL) or Keyboard.isKeyDown(Keyboard.KEY_RCONTROL)
+    local alt = Keyboard.isKeyDown(Keyboard.KEY_LMENU) or Keyboard.isKeyDown(Keyboard.KEY_RMENU)
+    return shift == expected.shift and ctrl == expected.ctrl and alt == expected.alt
+end
 
 local function callJava(name, ...)
     if not CarPhysicsImprovedV1.javaReady then return false end
@@ -68,6 +120,7 @@ local function sandboxBool(name, fallback)
 end
 
 local function applyOptions()
+    refreshKeyModifiers()
     callJava("setEnabled", enabled:getValue())
     callJava("setManualTransmission", manual:getValue())
     callJava("setTelemetry", telemetry:getValue())
@@ -89,6 +142,12 @@ local function applyOptions()
         sandboxValue("TractionOffroad", 0.6),
         sandboxValue("TractionRain", 0.7),
         sandboxValue("TractionSnow", 0.4))
+    callJava("configureTerrain",
+        sandboxValue("HeavyDutyOffroadAdvantagePercent", 60.0) / 100.0,
+        sandboxValue("HeavyDutyRainAdvantagePercent", 45.0) / 100.0,
+        sandboxValue("HeavyDutySnowAdvantagePercent", 60.0) / 100.0,
+        sandboxValue("HeavyDutyOffroadResistancePercent", 55.0) / 100.0,
+        sandboxValue("TerrainHandlingInfluencePercent", 45.0) / 100.0)
     callJava("configureSlide",
         sandboxBool("SlideMechanics", true),
         sandboxValue("DriftIntensity", 1.0),
@@ -124,11 +183,19 @@ end
 
 local function onKeyPressed(key)
     if not manual:getValue() or not CarPhysicsImprovedV1.javaReady then return end
-    local direction = key == shiftUp:getValue() and 1 or key == shiftDown:getValue() and -1 or 0
+    local direction = 0
+    if key == shiftUp:getValue() and modifiersMatch(keyModifiers[SHIFT_UP_BINDING]) then
+        direction = 1
+    elseif key == shiftDown:getValue() and modifiersMatch(keyModifiers[SHIFT_DOWN_BINDING]) then
+        direction = -1
+    end
     if direction == 0 then return end
     local player = getPlayer()
     local vehicle = player and player:getVehicle()
-    if vehicle then callJava("requestShiftFor", vehicle:getId(), direction) end
+    if vehicle then
+        if GameKeyboard and GameKeyboard.eatKeyPress then GameKeyboard.eatKeyPress(key) end
+        callJava("requestShiftFor", vehicle:getId(), direction)
+    end
 end
 
 local function stopSound(player)
