@@ -29,6 +29,26 @@ public final class RuntimeAbiSmokeTest {
         part.getDeclaredMethod("getScriptPart");
         Class<?> scriptPart = Class.forName("zombie.scripting.objects.VehicleScript$Part", false, loader);
         scriptPart.getDeclaredMethod("getId");
+        Class<?> vector3f = Class.forName("org.joml.Vector3f", false, loader);
+        vehicle.getDeclaredMethod("getForwardVector", vector3f);
+        Class<?> vehicleScript = Class.forName("zombie.scripting.objects.VehicleScript", false, loader);
+        vehicleScript.getDeclaredMethod("getFullName");
+        vehicleScript.getDeclaredMethod("getWheelCount");
+        vehicleScript.getDeclaredMethod("getWheel", int.class);
+        Class<?> scriptWheel = Class.forName("zombie.scripting.objects.VehicleScript$Wheel", false, loader);
+        scriptWheel.getDeclaredMethod("getOffset");
+        Class<?> colorInfo = Class.forName("zombie.core.textures.ColorInfo", false, loader);
+        colorInfo.getDeclaredConstructor(float.class, float.class, float.class, float.class);
+        colorInfo.getDeclaredMethod("set", float.class, float.class, float.class, float.class);
+        Class<?> isoSprite = Class.forName("zombie.iso.sprite.IsoSprite", false, loader);
+        isoSprite.getDeclaredConstructor();
+        isoSprite.getDeclaredMethod("LoadFrameExplicit", String.class);
+        isoSprite.getDeclaredMethod("renderBloodSplat",
+                float.class, float.class, float.class, colorInfo);
+        Class<?> fboRenderManager = Class.forName(
+                "zombie.iso.fboRenderChunk.FBORenderChunkManager", false, loader);
+        fboRenderManager.getDeclaredMethod("endFrame");
+        LegacyTireTrackRenderer.validateRuntimeAbi();
 
         CarPhysicsImprovedV1Mod.registerVehicleSpec("Example.ModCar", 250.0, 1_500.0, 300.0);
         var override = CarPhysicsImprovedV1Mod.vehicleOverride("Example.ModCar");

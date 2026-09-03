@@ -4,6 +4,7 @@ import dev.carphysicsimproved.v1.BuildInfo;
 import dev.carphysicsimproved.v1.physics.LegacyPhysics;
 import dev.carphysicsimproved.v1.physics.LegacySlideDynamics;
 import dev.carphysicsimproved.v1.physics.LegacyTerrainDynamics;
+import dev.carphysicsimproved.v1.runtime.LegacyTireTrackRenderer;
 import me.zed_0xff.zombie_buddy.Exposer;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -190,6 +191,27 @@ public final class CarPhysicsImprovedV1Mod {
     public static void updateEffects(int vehicleId, double burnoutAmount, double skidAmount) {
         BURNOUT.put(vehicleId, sanitizePositive(burnoutAmount));
         SKID.put(vehicleId, sanitizePositive(skidAmount));
+    }
+
+    public static void configureTireTracks(boolean enabledValue, double lifetimeSeconds, double opacity) {
+        LegacyTireTrackRenderer.configure(enabledValue, lifetimeSeconds, opacity);
+    }
+
+    public static void registerTireTrackTexture(int index, Object texture) {
+        LegacyTireTrackRenderer.registerTexture(index, texture);
+    }
+
+    public static void addTireTrackMark(
+            double x, double y, double z, int textureIndex, double alpha) {
+        LegacyTireTrackRenderer.addMark(x, y, z, textureIndex, alpha);
+    }
+
+    public static void clearTireTrackMarks() {
+        LegacyTireTrackRenderer.clearMarks();
+    }
+
+    public static String tireTrackRendererStatus() {
+        return LegacyTireTrackRenderer.status();
     }
 
     public static double burnoutAmountFor(int vehicleId) {

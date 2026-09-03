@@ -2,6 +2,7 @@ package dev.carphysicsimproved.v1.runtime;
 
 import dev.carphysicsimproved.v1.physics.LegacyPhysics;
 import dev.carphysicsimproved.v1.physics.LegacySlideDynamics;
+import dev.carphysicsimproved.v1.physics.LegacyTireEffects;
 import pzmod.carphysicsimproved.v1.CarPhysicsImprovedV1Mod;
 
 import java.util.Collections;
@@ -48,6 +49,7 @@ public final class LegacyHooks {
                 runtime.physics.gear = nativeGear == 0 ? 1 : nativeGear;
                 runtime.physics.lastStepGear = runtime.physics.gear;
                 runtime.slide = new LegacySlideDynamics.State();
+                runtime.tireEffects = new LegacyTireEffects.State();
                 runtime.conditionTimer = 0.0;
                 runtime.activeAgeSeconds = 0.0;
                 runtime.observerInitialized = false;
@@ -164,10 +166,26 @@ public final class LegacyHooks {
             runtime.lastDelta = dt;
             runtime.lastHeadingRadians = motion.headingRadians();
             runtime.observerInitialized = true;
-            double skid = Math.max(
-                    Math.max(output.burnoutSpeedKph() * 0.1, current.wheelSkid(vehicle)),
-                    slideOutput.skidSpeedMps());
-            CarPhysicsImprovedV1Mod.updateEffects(current.vehicleId(vehicle), output.burnoutSpeedKph(), skid);
+            double serviceBrakeAmount = clamp(
+                    output.brakingForce() / Math.max(0.1, snapshot.spec().brakingForce()), 0.0, 1.0);
+            boolean sliding = slideOutput.mode() == LegacySlideDynamics.Mode.SLIDE
+                    || slideOutput.mode() == LegacySlideDynamics.Mode.CONTROLLED;
+            LegacyTireEffects.Output tireEffects = LegacyTireEffects.step(
+                    new LegacyTireEffects.Input(
+                            output.burnoutSpeedKph(),
+                            motion.longitudinalSpeedMps(),
+                            motion.lateralSpeedMps(),
+                            slideOutput.sideSlipAngleRadians(),
+                            slideOutput.slideBlend(),
+                            slideOutput.intentionalSlide(),
+                            sliding,
+                            serviceBrakeAmount,
+                            controls.handbrake() ? 1.0 : 0.0,
+                            nativeAxleSkid.rear()),
+                    runtime.tireEffects,
+                    dt);
+            CarPhysicsImprovedV1Mod.updateEffects(
+                    current.vehicleId(vehicle), output.burnoutSpeedKph(), tireEffects.intensity());
 
             long now = System.nanoTime();
             if (CarPhysicsImprovedV1Mod.telemetry() && now - runtime.lastTelemetry > 2_000_000_000L) {
@@ -207,6 +225,8 @@ public final class LegacyHooks {
                         + " lat=" + Math.round(slideOutput.lateralForce())
                         + " yawCmd=" + Math.round(slideOutput.bulletYawTorque())
                         + " clutch=" + round(output.clutchKickIntensity(), 2)
+                        + " tireFx=" + round(tireEffects.intensity(), 2)
+                        + " tracks={" + LegacyTireTrackRenderer.status() + "}"
                         + " calibrated=" + slideOutput.yawSignCalibrated());
             }
             CarPhysicsImprovedV1Mod.updateStatus("active on " + snapshot.spec().fullType()
@@ -340,6 +360,7 @@ public final class LegacyHooks {
         private PzLegacyAccess.ConditionSnapshot conditions;
         private LegacyPhysics.State physics = new LegacyPhysics.State();
         private LegacySlideDynamics.State slide = new LegacySlideDynamics.State();
+        private LegacyTireEffects.State tireEffects = new LegacyTireEffects.State();
         private LegacyPhysics.Output output;
         private LegacySlideDynamics.Output slideOutput;
         private double conditionTimer;

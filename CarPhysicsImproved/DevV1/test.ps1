@@ -68,6 +68,16 @@ if ($LASTEXITCODE -ne 0) {
     throw "LegacyTerrainDynamicsTest failed with exit code $LASTEXITCODE"
 }
 
+& $java '-cp' $testClasses 'dev.carphysicsimproved.v1.physics.LegacyTireEffectsTest'
+if ($LASTEXITCODE -ne 0) {
+    throw "LegacyTireEffectsTest failed with exit code $LASTEXITCODE"
+}
+
+& $java '-cp' $testClasses 'dev.carphysicsimproved.v1.runtime.LegacyTireTrackRendererTest'
+if ($LASTEXITCODE -ne 0) {
+    throw "LegacyTireTrackRendererTest failed with exit code $LASTEXITCODE"
+}
+
 $runtimeClasspath = $testClasses + [System.IO.Path]::PathSeparator + $zombieBuddyJar + `
     [System.IO.Path]::PathSeparator + $gameJar
 & $gameJava '-cp' $runtimeClasspath 'dev.carphysicsimproved.v1.runtime.RuntimeAbiSmokeTest'
@@ -81,4 +91,4 @@ if ($LASTEXITCODE -ne 0) {
     throw "LuaSyntaxSmokeTest failed with exit code $LASTEXITCODE"
 }
 
-Write-Host 'All V1 drivetrain, slide, terrain, Lua syntax and installed-game ABI tests passed.'
+Write-Host 'All V1 drivetrain, slide, terrain, tire-effects, tire-renderer, Lua syntax and installed-game ABI tests passed.'
