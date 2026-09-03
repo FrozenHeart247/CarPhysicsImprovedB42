@@ -1,6 +1,7 @@
 package dev.carphysicsimproved.v1.runtime;
 
 import dev.carphysicsimproved.v1.physics.LegacyPhysics;
+import dev.carphysicsimproved.v1.physics.LegacyDriverTraits;
 import dev.carphysicsimproved.v1.physics.LegacySlideDynamics;
 import dev.carphysicsimproved.v1.physics.LegacyTerrainDynamics;
 import dev.carphysicsimproved.v1.physics.LegacyTireCondition;
@@ -27,9 +28,12 @@ final class PzLegacyAccess {
     private final Field controlsSteering;
     private final Field gameClientClient;
     private final Field gameServerServer;
+    private final Object sundayDriverTrait;
+    private final Object speedDemonTrait;
 
     private final Method vehicleLocalPhysics;
     private final Method vehicleDriver;
+    private final Method characterHasTrait;
     private final Method vehicleScript;
     private final Method vehiclePart;
     private final Method vehicleMass;
@@ -96,6 +100,9 @@ final class PzLegacyAccess {
         Class<?> controllerClass = Class.forName("zombie.core.physics.CarController", false, loader);
         Class<?> controlsClass = Class.forName("zombie.core.physics.CarController$ClientControls", false, loader);
         Class<?> vehicleClass = Class.forName("zombie.vehicles.BaseVehicle", false, loader);
+        Class<?> characterClass = Class.forName("zombie.characters.IsoGameCharacter", false, loader);
+        Class<?> characterTraitClass = Class.forName(
+                "zombie.scripting.objects.CharacterTrait", false, loader);
         Class<?> scriptClass = Class.forName("zombie.scripting.objects.VehicleScript", false, loader);
         Class<?> scriptWheelClass = Class.forName("zombie.scripting.objects.VehicleScript$Wheel", false, loader);
         Class<?> partClass = Class.forName("zombie.vehicles.VehiclePart", false, loader);
@@ -120,9 +127,12 @@ final class PzLegacyAccess {
         controlsSteering = field(controlsClass, "steering");
         gameClientClient = field(clientClass, "client");
         gameServerServer = field(serverClass, "server");
+        sundayDriverTrait = field(characterTraitClass, "SUNDAY_DRIVER").get(null);
+        speedDemonTrait = field(characterTraitClass, "SPEED_DEMON").get(null);
 
         vehicleLocalPhysics = method(vehicleClass, "isLocalPhysicSim");
         vehicleDriver = method(vehicleClass, "getDriver");
+        characterHasTrait = method(characterClass, "hasTrait", characterTraitClass);
         vehicleScript = method(vehicleClass, "getScript");
         vehiclePart = methodInHierarchy(vehicleClass, "getPartById", String.class);
         vehicleMass = method(vehicleClass, "getMass");
@@ -195,6 +205,16 @@ final class PzLegacyAccess {
 
     boolean hasDriver(Object vehicle) throws ReflectiveOperationException {
         return invoke(vehicleDriver, vehicle) != null;
+    }
+
+    LegacyDriverTraits.Modifiers driverModifiers(Object vehicle) throws ReflectiveOperationException {
+        Object driver = invoke(vehicleDriver, vehicle);
+        if (driver == null) {
+            return LegacyDriverTraits.normal();
+        }
+        boolean sundayDriver = (Boolean) invoke(characterHasTrait, driver, sundayDriverTrait);
+        boolean speedDemon = (Boolean) invoke(characterHasTrait, driver, speedDemonTrait);
+        return LegacyDriverTraits.modifiers(sundayDriver, speedDemon);
     }
 
     int vehicleId(Object vehicle) throws IllegalAccessException {
@@ -466,7 +486,7 @@ final class PzLegacyAccess {
      */
     void applyWheelFrictionScale(Object vehicle, double requestedScale) throws ReflectiveOperationException {
         Object script = script(vehicle);
-        double scale = clamp(requestedScale, 0.25, 1.0);
+        double scale = clamp(requestedScale, 0.12, 1.0);
         synchronized (scriptFrictionStates) {
             ScriptFrictionState state = scriptFrictionStates.get(script);
             if (scale >= 0.999) {
@@ -599,14 +619,8 @@ final class PzLegacyAccess {
 
     private static double axleGrip(double pressure, double conditionGrip, double surfaceGrip,
             double overallTraction) {
-        if (pressure <= 0.02 || conditionGrip <= 0.0) {
-            return 0.08;
-        }
-        double pressureGrip = pressure < 0.85
-                ? lerp(0.52, 1.0, clamp(pressure / 0.85, 0.0, 1.0))
-                : lerp(1.0, 0.84, clamp((pressure - 1.10) / 0.25, 0.0, 1.0));
-        return clamp(clamp(conditionGrip, 0.0, 1.25)
-                * pressureGrip * surfaceGrip * overallTraction, 0.08, 1.8);
+        double hardwareGrip = LegacyTireCondition.hardwareGrip(pressure, conditionGrip);
+        return clamp(hardwareGrip * surfaceGrip * overallTraction, 0.05, 1.8);
     }
 
     private static Field field(Class<?> owner, String name) throws NoSuchFieldException {

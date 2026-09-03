@@ -1,7 +1,9 @@
 package dev.carphysicsimproved.v1.runtime;
 
 import dev.carphysicsimproved.v1.physics.LegacyPhysics;
+import dev.carphysicsimproved.v1.physics.LegacyDriverTraits;
 import dev.carphysicsimproved.v1.physics.LegacySlideDynamics;
+import dev.carphysicsimproved.v1.physics.LegacyTireCondition;
 import dev.carphysicsimproved.v1.physics.LegacyTireEffects;
 import pzmod.carphysicsimproved.v1.CarPhysicsImprovedV1Mod;
 
@@ -84,6 +86,7 @@ public final class LegacyHooks {
             boolean serviceBrake = manual && backward;
             double analogThrottle = forward || (!manual && backward) ? controls.throttle() : 0.0;
             LegacySlideDynamics.Tuning slideTuning = CarPhysicsImprovedV1Mod.slideTuning();
+            LegacyDriverTraits.Modifiers driverModifiers = current.driverModifiers(vehicle);
             LegacyPhysics.Input input = new LegacyPhysics.Input(
                     motion.longitudinalSpeedMps(),
                     current.engineRunning(vehicle),
@@ -95,7 +98,8 @@ public final class LegacyHooks {
                     analogThrottle,
                     manual,
                     requestedGear,
-                    slideTuning.clutchKickEnabled());
+                    slideTuning.clutchKickEnabled(),
+                    driverModifiers);
             LegacyPhysics.Output output = LegacyPhysics.step(
                     snapshot.spec(), runtime.conditions.longitudinal(),
                     CarPhysicsImprovedV1Mod.settings(), input, runtime.physics, dt);
@@ -146,9 +150,12 @@ public final class LegacyHooks {
                 runtime.slide.reset();
                 slideOutput = LegacySlideDynamics.Output.inactive();
             }
-            double appliedWheelFrictionScale = Math.min(
-                    slideOutput.wheelFrictionScale(),
-                    runtime.conditions.terrain().nativeWheelFrictionScale());
+            double tireHardwareGrip = LegacyTireCondition.hardwareGrip(
+                    runtime.conditions.longitudinal().tirePressure(),
+                    runtime.conditions.longitudinal().tireConditionGrip());
+            double tireWheelFrictionScale = LegacyTireCondition.nativeFrictionScale(tireHardwareGrip);
+            double appliedWheelFrictionScale = Math.min(slideOutput.wheelFrictionScale(),
+                    Math.min(runtime.conditions.terrain().nativeWheelFrictionScale(), tireWheelFrictionScale));
             current.applyWheelFrictionScale(vehicle, appliedWheelFrictionScale);
             double driftSteeringMultiplier = slideOutput.intentionalSlide()
                     ? slideTuning.driftSteeringMultiplier() : 1.0;
@@ -192,6 +199,7 @@ public final class LegacyHooks {
                 runtime.lastTelemetry = now;
                 System.out.println("[CarPhysicsImprovedV1] vehicle=" + snapshot.spec().fullType()
                         + " mode=" + (manual ? "M" : "A")
+                        + " driver=" + driverModifiers.telemetryName()
                         + " gear=" + gearName(output.gear())
                         + " speed=" + round(current.speedKph(vehicle), 1)
                         + " rpm=" + Math.round(output.engineRpm())
@@ -222,6 +230,7 @@ public final class LegacyHooks {
                         + " active=" + slideOutput.intentionalSlide()
                         + " blend=" + round(slideOutput.slideBlend(), 2)
                         + " wheelGrip=" + round(appliedWheelFrictionScale, 2)
+                        + " tireHardware=" + round(tireHardwareGrip, 2)
                         + " lat=" + Math.round(slideOutput.lateralForce())
                         + " yawCmd=" + Math.round(slideOutput.bulletYawTorque())
                         + " clutch=" + round(output.clutchKickIntensity(), 2)

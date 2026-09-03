@@ -79,6 +79,16 @@ if ($LASTEXITCODE -ne 0) {
     throw "LegacyTireConditionTest failed with exit code $LASTEXITCODE"
 }
 
+& $java '-cp' $testClasses 'dev.carphysicsimproved.v1.physics.LegacyCabinExposureTest'
+if ($LASTEXITCODE -ne 0) {
+    throw "LegacyCabinExposureTest failed with exit code $LASTEXITCODE"
+}
+
+& $java '-cp' $testClasses 'dev.carphysicsimproved.v1.physics.LegacyDriverTraitsTest'
+if ($LASTEXITCODE -ne 0) {
+    throw "LegacyDriverTraitsTest failed with exit code $LASTEXITCODE"
+}
+
 & $java '-cp' $testClasses 'dev.carphysicsimproved.v1.runtime.LegacyTireTrackRendererTest'
 if ($LASTEXITCODE -ne 0) {
     throw "LegacyTireTrackRendererTest failed with exit code $LASTEXITCODE"
@@ -102,4 +112,4 @@ if ($LASTEXITCODE -ne 0) {
     throw "LuaSyntaxSmokeTest failed with exit code $LASTEXITCODE"
 }
 
-Write-Host 'All V1 drivetrain, slide, terrain, tire-effects, tire-renderer, Lua syntax and installed-game ABI tests passed.'
+Write-Host 'All V1 drivetrain, driver-traits, slide, terrain, tire-effects, cabin-weather, tire-renderer, Lua syntax and installed-game ABI tests passed.'

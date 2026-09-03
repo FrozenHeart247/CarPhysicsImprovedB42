@@ -12,6 +12,10 @@ public final class RuntimeAbiSmokeTest {
         Class<?> vehicle = Class.forName("zombie.vehicles.BaseVehicle", false, loader);
         Class<?> object = Class.forName("zombie.iso.IsoObject", false, loader);
         Class<?> character = Class.forName("zombie.characters.IsoGameCharacter", false, loader);
+        Class<?> characterTrait = Class.forName("zombie.scripting.objects.CharacterTrait", false, loader);
+        character.getDeclaredMethod("hasTrait", characterTrait);
+        characterTrait.getDeclaredField("SUNDAY_DRIVER");
+        characterTrait.getDeclaredField("SPEED_DEMON");
         Class<?> corpse = Class.forName("zombie.iso.objects.IsoDeadBody", false, loader);
         vehicle.getDeclaredMethod("applyImpulseFromHitPlant", object, float.class);
         vehicle.getDeclaredMethod("applyImpulseFromHitPedestrian", character);
@@ -64,6 +68,7 @@ public final class RuntimeAbiSmokeTest {
                 "zombie.iso.fboRenderChunk.FBORenderChunkManager", false, loader);
         fboRenderManager.getDeclaredMethod("endFrame");
         LegacyTireTrackRenderer.validateRuntimeAbi();
+        LegacyCabinExposureHooks.validateRuntimeAbi();
 
         CarPhysicsImprovedV1Mod.registerVehicleSpec("Example.ModCar", 250.0, 1_500.0, 300.0);
         var override = CarPhysicsImprovedV1Mod.vehicleOverride("Example.ModCar");

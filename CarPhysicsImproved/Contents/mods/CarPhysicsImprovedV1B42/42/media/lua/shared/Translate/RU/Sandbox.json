@@ -4,7 +4,6 @@
     "Sandbox_CPI_V1_Traction": "CPI V1: сцепление",
     "Sandbox_CPI_V1_Slides": "CPI V1: дрифт и занос",
     "Sandbox_CPI_V1_Impulses": "CPI V1: импульсы столкновений",
-    "Sandbox_CPI_V1_Cargo": "CPI V1: вместимость",
     "Sandbox_CPI_V1_TorqueSport": "Множитель тяги спорткаров",
     "Sandbox_CPI_V1_TorqueStandard": "Множитель тяги обычных машин",
     "Sandbox_CPI_V1_TorqueHeavy": "Множитель тяги тяжёлых машин",
@@ -57,10 +56,5 @@
     "Sandbox_CPI_V1_CorpseBump_tooltip": "Сила отдельного вертикального толчка от трупов, лежащих зомби, животных и других персонажей под колёсами. 1.0 — умеренный подлёт, 3.0 — сильный. Ванильный слабый cap заменён безопасным расширенным пределом, повтор ограничен одним толчком за 0.08 секунды.",
     "Sandbox_CPI_V1_ObstacleSlowdown": "Ограничитель скорости от кустов и объектов",
     "Sandbox_CPI_V1_ObstacleSlowdown_tooltip": "Отдельный ванильный CarSlowFactor у кустов, изгородей и разрушаемых объектов. 1.0 — ваниль, 0 — не добавлять объектный лимит скорости. Не заменяет импульс растений.",
-    "Sandbox_CPI_V1_TrunkOverhaul": "Использовать зарегистрированную реальную вместимость",
-    "Sandbox_CPI_V1_TrunkMultiplier": "Множитель зарегистрированной вместимости",
-    "Sandbox_CPI_V1_TrunkAdder": "Добавка к зарегистрированной вместимости",
-    "Sandbox_CPI_V1_OtherTrunkMultiplier": "Множитель незарегистрированных багажников",
-    "Sandbox_CPI_V1_OtherTrunkAdder": "Добавка к незарегистрированным багажникам",
     "Sandbox_CarPhysicsImprovedV1B42": "Car Physics Improved V1 (Legacy)"
 }

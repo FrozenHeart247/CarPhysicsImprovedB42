@@ -407,12 +407,9 @@ local function applyOptions()
         sandboxValue("CorpseImpulse", 1.0))
     callJava("configureCorpseBump", sandboxValue("CorpseBump", 1.0))
     callJava("configureObstacleSlowdown", sandboxValue("ObstacleSlowdown", 0.3))
-    callJava("configureTrunk",
-        sandboxBool("TrunkOverhaul", false),
-        sandboxValue("TrunkMultiplier", 1.0),
-        sandboxValue("TrunkAdder", 0.0),
-        sandboxValue("OtherTrunkMultiplier", 1.0),
-        sandboxValue("OtherTrunkAdder", 0.0))
+    -- Cargo-capacity overrides are intentionally disabled. This also prevents
+    -- removed values persisted by an older save from remaining active invisibly.
+    callJava("configureTrunk", false, 1.0, 0.0, 1.0, 0.0)
     CarPhysicsImprovedV1.flushVehicleSpecs()
 end
 

@@ -71,12 +71,17 @@ $requiredEntries = @(
     'pzmod/carphysicsimproved/v1/Patch_BaseVehicleImpulses$ObstacleSlowdown.class',
     'pzmod/carphysicsimproved/v1/Patch_ItemContainer.class',
     'pzmod/carphysicsimproved/v1/Patch_FBORenderChunkManager.class',
+    'pzmod/carphysicsimproved/v1/Patch_Temperature.class',
+    'pzmod/carphysicsimproved/v1/Patch_BodyDamageWetness.class',
     'dev/carphysicsimproved/v1/physics/LegacyPhysics.class',
     'dev/carphysicsimproved/v1/physics/LegacySlideDynamics.class',
     'dev/carphysicsimproved/v1/physics/LegacyTerrainDynamics.class',
     'dev/carphysicsimproved/v1/physics/LegacyTireCondition.class',
+    'dev/carphysicsimproved/v1/physics/LegacyCabinExposure.class',
+    'dev/carphysicsimproved/v1/physics/LegacyDriverTraits.class',
     'dev/carphysicsimproved/v1/runtime/ProneImpulseLimiter.class',
-    'dev/carphysicsimproved/v1/runtime/LegacyTireTrackRenderer.class'
+    'dev/carphysicsimproved/v1/runtime/LegacyTireTrackRenderer.class',
+    'dev/carphysicsimproved/v1/runtime/LegacyCabinExposureHooks.class'
 )
 foreach ($entry in $requiredEntries) {
     if ($entries -cnotcontains $entry) {

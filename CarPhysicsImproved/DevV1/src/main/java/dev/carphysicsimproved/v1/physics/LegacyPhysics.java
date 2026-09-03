@@ -25,7 +25,9 @@ public final class LegacyPhysics {
         double throttleTarget = forwardPropulsion || reversePropulsion
                 ? clamp(input.analogThrottle(), 0.0, 1.0)
                 : 0.0;
-        state.throttle = approach(state.throttle, throttleTarget, dt * 4.0);
+        LegacyDriverTraits.Modifiers driver = input.driverModifiers();
+        state.throttle = approach(state.throttle, throttleTarget,
+                dt * 4.0 * driver.throttleResponse());
         state.fullThrottleSeconds = state.throttle >= 0.995
                 ? clamp(state.fullThrottleSeconds + dt, 0.0, 1.0)
                 : clamp(state.fullThrottleSeconds - dt, 0.0, 1.0);
@@ -35,7 +37,8 @@ public final class LegacyPhysics {
             if (input.reverseDemand() && speedKph <= 0.8) {
                 gear = -1;
             } else if (input.forwardDemand() || speedKph > 0.8) {
-                gear = automaticGear(spec, state, absoluteSpeedKph);
+                gear = automaticGear(spec, state, absoluteSpeedKph,
+                        driver.speedRangeMultiplier());
             } else {
                 gear = state.gear == -1 && absoluteSpeedKph < 0.8 ? -1 : Math.max(1, state.gear);
             }
@@ -58,13 +61,16 @@ public final class LegacyPhysics {
 
         double pressure = clamp(conditions.tirePressure(), 0.0, 1.35);
         double conditionGrip = clamp(conditions.tireConditionGrip(), 0.0, 1.25);
-        double tireTraction = conditionGrip * settings.overallTraction();
+        double hardwareGrip = LegacyTireCondition.hardwareGrip(pressure, conditionGrip);
+        double tireTraction = hardwareGrip * settings.overallTraction();
         tireTraction *= clamp(conditions.surfaceGrip(), 0.1, 1.0);
         tireTraction = clamp(tireTraction, 0.05, 1.8);
 
         double steeringSpeedRatio = clamp(absoluteSpeedKph / settings.steeringHighSpeedKph(), 0.0, 1.0);
         double steeringFactor = lerp(settings.steeringFactorLowSpeed(), settings.steeringFactorHighSpeed(),
                 steeringSpeedRatio);
+        double steeringAuthority = LegacyTireCondition.steeringAuthority(hardwareGrip);
+        steeringFactor *= steeringAuthority;
         double centeringFactor = lerp(settings.steeringCenteringLowSpeed(), settings.steeringCenteringHighSpeed(),
                 steeringSpeedRatio);
         double requestedSteering = clamp(input.steeringInput(), -1.0, 1.0);
@@ -78,12 +84,14 @@ public final class LegacyPhysics {
         } else {
             state.steering = approach(state.steering, 0.0, centeringFactor * 4.0 * dt);
         }
-        state.steering = clamp(state.steering, -spec.steeringClampRadians, spec.steeringClampRadians);
+        double steeringLimit = spec.steeringClampRadians * steeringAuthority;
+        state.steering = clamp(state.steering, -steeringLimit, steeringLimit);
 
         double redline = spec.redlineRpm;
-        double finalDrive = 0.95 * redline / Math.max(10.0, spec.maximumSpeedKph);
+        double forceFinalDrive = 0.95 * redline / Math.max(10.0, spec.maximumSpeedKph);
+        double rpmFinalDrive = forceFinalDrive / driver.speedRangeMultiplier();
         double ratio = ratioFor(spec, gear);
-        double wheelInputRpm = absoluteSpeedKph * Math.abs(ratio) * finalDrive;
+        double wheelInputRpm = absoluteSpeedKph * Math.abs(ratio) * rpmFinalDrive;
         double rpm = Math.max(spec.idleRpm, state.engineRpm);
         if (input.manualTransmission() && input.clutchKickEnabled()
                 && previousGear == 0 && gear != 0) {
@@ -112,7 +120,8 @@ public final class LegacyPhysics {
                 case 2 -> settings.heavyTorqueMultiplier();
                 default -> settings.standardTorqueMultiplier();
             };
-            double baseTorque = spec.enginePower * torqueScale * 4500.0 / redline;
+            double baseTorque = spec.enginePower * torqueScale
+                    * driver.torqueMultiplier() * 4500.0 / redline;
             double curve = clamp(1.0 - (rpm - redline) / 1000.0, 0.0, 1.0)
                     * clamp(rpm / redline * 2.0, 0.2, 1.0);
             double engineTorque = state.throttle * curve * baseTorque - baseTorque * 0.35 * rpm / redline;
@@ -126,10 +135,11 @@ public final class LegacyPhysics {
             double torqueMultiplier = lerp(settings.torqueMultiplierLimit(), 1.0,
                     clamp(speedRatio * 1.1, 0.0, 1.0));
 
-            rawDriveForce = engineTorque * converter * torqueMultiplier * Math.abs(ratio) * finalDrive * 0.05;
+            rawDriveForce = engineTorque * converter * torqueMultiplier
+                    * Math.abs(ratio) * forceFinalDrive * 0.05;
             double tractionLimit = spec.massKg * 2.0 * tireTraction * settings.accelerationTraction();
             if (state.clutchKick > 0.0) {
-                double clutchForce = baseTorque * Math.abs(ratio) * finalDrive * 0.05
+                double clutchForce = baseTorque * Math.abs(ratio) * forceFinalDrive * 0.05
                         * state.clutchKick * (0.45 + 0.85 * state.throttle);
                 rawDriveForce += clutchForce;
 
@@ -137,7 +147,7 @@ public final class LegacyPhysics {
                 // multiplier. Demand may exceed available grip, while the force sent
                 // to the vehicle remains clipped below. The excess becomes wheelspin.
                 double wheelTorqueAuthority = clamp(
-                        baseTorque * Math.abs(ratio) * finalDrive * 0.05
+                        baseTorque * Math.abs(ratio) * forceFinalDrive * 0.05
                                 / Math.max(1.0, tractionLimit),
                         0.0, 1.5);
                 double clutchDemandRatio = 0.72 + state.clutchKick
@@ -216,8 +226,10 @@ public final class LegacyPhysics {
                 burnoutSpeedKph, state.engineRpm, state.throttle, rawDriveForce, clutchKickIntensity);
     }
 
-    private static int automaticGear(Spec spec, State state, double speedKph) {
-        double finalDrive = 0.95 * spec.redlineRpm / Math.max(10.0, spec.maximumSpeedKph);
+    private static int automaticGear(Spec spec, State state, double speedKph,
+            double speedRangeMultiplier) {
+        double finalDrive = 0.95 * spec.redlineRpm
+                / Math.max(10.0, spec.maximumSpeedKph * speedRangeMultiplier);
         int gear = 1;
         for (; gear < spec.forwardRatios.length; gear++) {
             double hysteresis = state.gear > gear ? 500.0 : 0.0;
@@ -311,13 +323,27 @@ public final class LegacyPhysics {
 
     public record Input(double longitudinalSpeedMps, boolean engineRunning, boolean forwardDemand,
             boolean reverseDemand, boolean serviceBrake, boolean handbrake, double steeringInput,
-            double analogThrottle, boolean manualTransmission, int requestedGear, boolean clutchKickEnabled) {
+            double analogThrottle, boolean manualTransmission, int requestedGear, boolean clutchKickEnabled,
+            LegacyDriverTraits.Modifiers driverModifiers) {
+        public Input {
+            driverModifiers = driverModifiers == null ? LegacyDriverTraits.normal() : driverModifiers;
+        }
+
         public Input(double longitudinalSpeedMps, boolean engineRunning, boolean forwardDemand,
                 boolean reverseDemand, boolean serviceBrake, boolean handbrake, double steeringInput,
                 double analogThrottle, boolean manualTransmission, int requestedGear) {
             this(longitudinalSpeedMps, engineRunning, forwardDemand, reverseDemand,
                     serviceBrake, handbrake, steeringInput, analogThrottle,
-                    manualTransmission, requestedGear, true);
+                    manualTransmission, requestedGear, true, LegacyDriverTraits.normal());
+        }
+
+        public Input(double longitudinalSpeedMps, boolean engineRunning, boolean forwardDemand,
+                boolean reverseDemand, boolean serviceBrake, boolean handbrake, double steeringInput,
+                double analogThrottle, boolean manualTransmission, int requestedGear,
+                boolean clutchKickEnabled) {
+            this(longitudinalSpeedMps, engineRunning, forwardDemand, reverseDemand,
+                    serviceBrake, handbrake, steeringInput, analogThrottle,
+                    manualTransmission, requestedGear, clutchKickEnabled, LegacyDriverTraits.normal());
         }
     }
 

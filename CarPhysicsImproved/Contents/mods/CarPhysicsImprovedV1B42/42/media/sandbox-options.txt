@@ -78,14 +78,3 @@ option CarPhysicsImprovedV1B42.CorpseBump
 { type = double, min = 0, max = 3, default = 1, page = CPI_V1_Impulses, translation = CPI_V1_CorpseBump, }
 option CarPhysicsImprovedV1B42.ObstacleSlowdown
 { type = double, min = 0, max = 2, default = 0.3, page = CPI_V1_Impulses, translation = CPI_V1_ObstacleSlowdown, }
-
-option CarPhysicsImprovedV1B42.TrunkOverhaul
-{ type = boolean, default = false, page = CPI_V1_Cargo, translation = CPI_V1_TrunkOverhaul, }
-option CarPhysicsImprovedV1B42.TrunkMultiplier
-{ type = double, min = 0, max = 100, default = 1, page = CPI_V1_Cargo, translation = CPI_V1_TrunkMultiplier, }
-option CarPhysicsImprovedV1B42.TrunkAdder
-{ type = double, min = -10000, max = 10000, default = 0, page = CPI_V1_Cargo, translation = CPI_V1_TrunkAdder, }
-option CarPhysicsImprovedV1B42.OtherTrunkMultiplier
-{ type = double, min = 0, max = 100, default = 1, page = CPI_V1_Cargo, translation = CPI_V1_OtherTrunkMultiplier, }
-option CarPhysicsImprovedV1B42.OtherTrunkAdder
-{ type = double, min = -10000, max = 10000, default = 0, page = CPI_V1_Cargo, translation = CPI_V1_OtherTrunkAdder, }

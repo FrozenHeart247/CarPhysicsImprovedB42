@@ -126,6 +126,27 @@ public final class LegacyPhysicsTest {
         check(Math.abs(highSteering.steeringRadians()) < Math.abs(lowSteering.steeringRadians()),
                 "high-speed steering must build more slowly");
 
+        LegacyPhysics.State healthyTireSteeringState = warmedState(1);
+        LegacyPhysics.State destroyedTireSteeringState = warmedState(1);
+        LegacyPhysics.Output healthyTireSteering = null;
+        LegacyPhysics.Output destroyedTireSteering = null;
+        LegacyPhysics.Conditions destroyedSoftTires = new LegacyPhysics.Conditions(
+                0.50, LegacyTireCondition.gripMultiplier(0.10, 1.4), 1.0, false);
+        for (int index = 0; index < 30; index++) {
+            LegacyPhysics.Input steeringInput = new LegacyPhysics.Input(
+                    2.0, true, false, false, false, false, 1.0, 0.0, true, 1);
+            healthyTireSteering = LegacyPhysics.step(sport, road, settings,
+                    steeringInput, healthyTireSteeringState, 0.05);
+            destroyedTireSteering = LegacyPhysics.step(sport, destroyedSoftTires, settings,
+                    steeringInput, destroyedTireSteeringState, 0.05);
+        }
+        check(healthyTireSteering != null && destroyedTireSteering != null
+                        && Math.abs(destroyedTireSteering.steeringRadians())
+                                < Math.abs(healthyTireSteering.steeringRadians()) * 0.35,
+                "destroyed half-inflated tires must have very weak steering authority");
+        check(destroyedTireSteering.tireTraction() < healthyTireSteering.tireTraction() * 0.10,
+                "pressure and deep wear must both reduce drivetrain traction");
+
         LegacyPhysics.Output dryRoadDefault = LegacyPhysics.step(sport, road, settings,
                 input(15.0, true, false, 2), warmedState(2), 0.05);
         LegacyPhysics.Output dryRoadTerrainProfile = LegacyPhysics.step(sport,
@@ -145,7 +166,7 @@ public final class LegacyPhysicsTest {
         checkFinite(firstGear, fifthGear, highSpeed, coast, coastRpm, burnout, good, bad, reverseLimited,
                 neutralDrop, fifthGearDrop, disabledKick,
                 lowSteering, highSteering, dryRoadDefault, dryRoadTerrainProfile,
-                ordinaryOffroad, heavyOffroad);
+                ordinaryOffroad, heavyOffroad, healthyTireSteering, destroyedTireSteering);
         System.out.println("LegacyPhysicsTest: all legacy drivetrain invariants passed");
     }
 

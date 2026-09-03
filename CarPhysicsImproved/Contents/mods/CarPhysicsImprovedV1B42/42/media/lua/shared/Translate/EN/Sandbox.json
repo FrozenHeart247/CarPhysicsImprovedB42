@@ -4,7 +4,6 @@
     "Sandbox_CPI_V1_Traction": "CPI V1: Traction",
     "Sandbox_CPI_V1_Slides": "CPI V1: Drift and skid",
     "Sandbox_CPI_V1_Impulses": "CPI V1: Collision impulses",
-    "Sandbox_CPI_V1_Cargo": "CPI V1: Cargo compatibility",
     "Sandbox_CPI_V1_TorqueSport": "Sport torque multiplier",
     "Sandbox_CPI_V1_TorqueStandard": "Standard torque multiplier",
     "Sandbox_CPI_V1_TorqueHeavy": "Heavy-duty torque multiplier",
@@ -57,10 +56,5 @@
     "Sandbox_CPI_V1_CorpseBump_tooltip": "Strength of the separate vertical bump from corpses, prone zombies, animals and other characters under the wheels. 1.0 is moderate and 3.0 is strong. B42's weak cap is replaced by a wider safety cap; repeats remain limited to once per 0.08 seconds.",
     "Sandbox_CPI_V1_ObstacleSlowdown": "Bush and object speed limiter",
     "Sandbox_CPI_V1_ObstacleSlowdown_tooltip": "Separate vanilla CarSlowFactor used by bushes, hedges and breakable objects. 1.0 is vanilla; 0 removes the added object speed limit. This does not replace plant impulse.",
-    "Sandbox_CPI_V1_TrunkOverhaul": "Use registered real-world cargo capacity",
-    "Sandbox_CPI_V1_TrunkMultiplier": "Registered cargo multiplier",
-    "Sandbox_CPI_V1_TrunkAdder": "Registered cargo addition",
-    "Sandbox_CPI_V1_OtherTrunkMultiplier": "Unregistered trunk multiplier",
-    "Sandbox_CPI_V1_OtherTrunkAdder": "Unregistered trunk addition",
     "Sandbox_CarPhysicsImprovedV1B42": "Car Physics Improved V1 (Legacy)"
 }
