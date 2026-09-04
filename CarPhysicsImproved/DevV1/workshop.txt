@@ -1,5 +1,0 @@
-version=1
-title=Car_Physics_Improved_V1_Legacy
-description=Independent ZombieBuddy port of the legacy drivetrain style for Build 42. Alternative to Car Physics Improved V2; do not enable both.
-tags=Build 42;
-visibility=private

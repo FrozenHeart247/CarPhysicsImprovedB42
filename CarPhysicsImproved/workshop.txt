@@ -1,5 +1,5 @@
 version=1
 title=Car_Physics_Improved
-description=Two alternative Build 42 vehicle-physics mods in one Workshop item. V1 ports the legacy drivetrain style to ZombieBuddy; V2 is the independent new physics model. Enable only one version at a time.
+description=Vehicle physics for Build 42 and ZombieBuddy with a unified drivetrain, controlled drift, tire wear, generated tire marks, and terrain-aware handling. Java source code and build instructions are included.
 tags=Build 42;
 visibility=private

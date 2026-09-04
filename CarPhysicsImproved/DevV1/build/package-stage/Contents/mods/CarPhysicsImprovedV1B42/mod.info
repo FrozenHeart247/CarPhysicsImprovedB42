@@ -1,8 +1,0 @@
-name=Car Physics Improved V1 (Legacy)
-id=CarPhysicsImprovedV1B42
-author=Car Physics Improved contributors
-versionMin=42.0
-require=ZombieBuddy
-incompatible=\CarPhysicsImprovedB42;\RoadcraftDynamicsB42;\RealisticCarPhysics
-modversion=0.3.1-dev
-description=Independent ZombieBuddy port of the legacy drivetrain style with traction-limited wheelspin, natural and controlled slides, clutch kick, terrain-aware Heavy-Duty handling, collision impulse controls, and generic Workshop vehicle support.
