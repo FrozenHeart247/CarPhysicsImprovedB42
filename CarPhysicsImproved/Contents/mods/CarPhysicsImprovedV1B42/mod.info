@@ -4,5 +4,5 @@ author=Car Physics Improved contributors
 versionMin=42.0
 require=ZombieBuddy
 incompatible=\CarPhysicsImprovedB42;\RoadcraftDynamicsB42;\RealisticCarPhysics
-modversion=0.4.22-dev
+modversion=0.4.23-dev
 description=Vehicle physics for ZombieBuddy with traction-limited wheelspin, natural and controlled slides, clutch kick, generated tire marks, terrain-aware Heavy-Duty handling, collision impulse controls, and generic Workshop vehicle support.

@@ -100,7 +100,12 @@ public final class LegacyPhysics {
         double ratio = ratioFor(spec, gear);
         double wheelInputRpm = absoluteSpeedKph * Math.abs(ratio) * rpmFinalDrive;
         double rpm = Math.max(spec.idleRpm, state.engineRpm);
-        if (input.manualTransmission() && input.clutchKickEnabled()
+        boolean drivePowerAvailable = spec.enginePower > 0.0;
+        if (!drivePowerAvailable) {
+            // Zero power is a real loss of drive, not an engine shutdown. Do not
+            // retain a clutch impulse that could replay when power returns.
+            state.clutchKick = 0.0;
+        } else if (input.manualTransmission() && input.clutchKickEnabled()
                 && previousGear == 0 && gear != 0) {
             double rpmMismatch = Math.max(0.0, rpm - Math.max(spec.idleRpm, wheelInputRpm));
             double mismatch = clamp(rpmMismatch / Math.max(500.0, redline - spec.idleRpm), 0.0, 1.0);
@@ -121,7 +126,7 @@ public final class LegacyPhysics {
         double driveForce = 0.0;
         double rawDriveForce = 0.0;
         double burnoutSpeedKph = 0.0;
-        if (input.engineRunning() && gear != 0 && state.throttle > 0.0) {
+        if (input.engineRunning() && drivePowerAvailable && gear != 0 && state.throttle > 0.0) {
             double torqueScale = switch (spec.mechanicType) {
                 case 3 -> settings.sportTorqueMultiplier();
                 case 2 -> settings.heavyTorqueMultiplier();
@@ -299,7 +304,9 @@ public final class LegacyPhysics {
         public Spec {
             fullType = fullType == null ? "unknown" : fullType;
             massKg = clamp(massKg, 100.0, 20_000.0);
-            enginePower = clamp(enginePower, 1.0, 5_000.0);
+            // Preserve the old positive-power range; only zero/invalid power loses drive.
+            enginePower = Double.isFinite(enginePower) && enginePower > 0.0
+                    ? clamp(enginePower, 1.0, 5_000.0) : 0.0;
             maximumSpeedKph = clamp(maximumSpeedKph, 10.0, 120.0);
             idleRpm = clamp(idleRpm, 300.0, 2_000.0);
             redlineRpm = clamp(redlineRpm, 2_000.0, 10_000.0);

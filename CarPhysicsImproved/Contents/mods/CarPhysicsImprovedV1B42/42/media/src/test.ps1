@@ -66,6 +66,16 @@ if ($LASTEXITCODE -ne 0) {
     throw "LegacyPhysicsTest failed with exit code $LASTEXITCODE"
 }
 
+& $java '-cp' $testClasses 'dev.carphysicsimproved.v1.physics.LegacyZeroPowerTest'
+if ($LASTEXITCODE -ne 0) {
+    throw "LegacyZeroPowerTest failed with exit code $LASTEXITCODE"
+}
+
+& $java '-cp' $testClasses 'dev.carphysicsimproved.v1.physics.LegacyPoweredRegressionTest'
+if ($LASTEXITCODE -ne 0) {
+    throw "LegacyPoweredRegressionTest failed with exit code $LASTEXITCODE"
+}
+
 & $java '-cp' $testClasses 'dev.carphysicsimproved.v1.physics.LegacySlideDynamicsTest'
 if ($LASTEXITCODE -ne 0) {
     throw "LegacySlideDynamicsTest failed with exit code $LASTEXITCODE"
