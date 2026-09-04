@@ -1,5 +1,5 @@
 {
-    "Sandbox_CPI_V1_Physics": "CPI V1: классическая трансмиссия",
+    "Sandbox_CPI_V1_Physics": "CPI V1: трансмиссия",
     "Sandbox_CPI_V1_Resistance": "CPI V1: сопротивления",
     "Sandbox_CPI_V1_Traction": "CPI V1: сцепление",
     "Sandbox_CPI_V1_Slides": "CPI V1: дрифт и занос",
@@ -34,15 +34,15 @@
     "Sandbox_CPI_V1_SlideMechanics": "Включить дрифт и естественные заносы",
     "Sandbox_CPI_V1_DriftIntensity": "Интенсивность намеренного дрифта",
     "Sandbox_CPI_V1_PowerDriftRotation": "Доворот силового дрифта",
-    "Sandbox_CPI_V1_PowerDriftRotation_tooltip": "Сила вращения от текущего ввода руля при силовом дрифте и clutch kick. Базовое значение по принципу BVD: 2000.",
+    "Sandbox_CPI_V1_PowerDriftRotation_tooltip": "Сила вращения при силовом дрифте и clutch kick. У дрифта отдельной клавишей свои настройки в Mod Options. Базовое значение: 2000.",
     "Sandbox_CPI_V1_HandbrakeDriftRotation": "Доворот дрифта с ручником",
-    "Sandbox_CPI_V1_HandbrakeDriftRotation_tooltip": "Сила вращения от текущего ввода руля во время заноса с ручником. Базовое значение по принципу BVD: 2000.",
+    "Sandbox_CPI_V1_HandbrakeDriftRotation_tooltip": "Сила вращения от текущего ввода руля во время заноса с ручником. По умолчанию: 2000.",
     "Sandbox_CPI_V1_PowerDriftGripPercent": "Сцепление в силовом дрифте (%%)",
-    "Sandbox_CPI_V1_PowerDriftGripPercent_tooltip": "Временное сцепление колёс при силовом дрифте и clutch kick. Чем ниже значение, тем свободнее и дольше скольжение.",
+    "Sandbox_CPI_V1_PowerDriftGripPercent_tooltip": "Сцепление в силовом дрифте и clutch kick. У дрифта отдельной клавишей свои настройки в Mod Options. Чем ниже значение, тем свободнее скольжение.",
     "Sandbox_CPI_V1_HandbrakeDriftGripPercent": "Сцепление в дрифте с ручником (%%)",
     "Sandbox_CPI_V1_HandbrakeDriftGripPercent_tooltip": "Временное сцепление колёс при дрифте с ручником. Чем ниже значение, тем легче срывается задняя ось.",
     "Sandbox_CPI_V1_DriftSteeringPercent": "Руление во время дрифта (%%)",
-    "Sandbox_CPI_V1_DriftSteeringPercent_tooltip": "Множитель руления только пока намеренный занос реально продолжается. Значение 100%% отключает дополнительное усиление руля.",
+    "Sandbox_CPI_V1_DriftSteeringPercent_tooltip": "Усиление угла при заносе от ручника, силовом дрифте и clutch kick. У дрифта отдельной клавишей своя настройка скорости отклика в Mod Options. Значение 100%% отключает усиление.",
     "Sandbox_CPI_V1_StabilityAssist": "Сила выхода из неконтролируемого заноса",
     "Sandbox_CPI_V1_PowerDriftDelay": "Задержка силового дрифта на полном газу (секунды)",
     "Sandbox_CPI_V1_ClutchKick": "Включить clutch kick на высоких оборотах",
@@ -56,5 +56,5 @@
     "Sandbox_CPI_V1_CorpseBump_tooltip": "Сила отдельного вертикального толчка от трупов, лежащих зомби, животных и других персонажей под колёсами. 1.0 — умеренный подлёт, 3.0 — сильный. Ванильный слабый cap заменён безопасным расширенным пределом, повтор ограничен одним толчком за 0.08 секунды.",
     "Sandbox_CPI_V1_ObstacleSlowdown": "Ограничитель скорости от кустов и объектов",
     "Sandbox_CPI_V1_ObstacleSlowdown_tooltip": "Отдельный ванильный CarSlowFactor у кустов, изгородей и разрушаемых объектов. 1.0 — ваниль, 0 — не добавлять объектный лимит скорости. Не заменяет импульс растений.",
-    "Sandbox_CarPhysicsImprovedV1B42": "Car Physics Improved V1 (Legacy)"
+    "Sandbox_CarPhysicsImprovedV1B42": "Car Physics Improved V1"
 }

@@ -1,0 +1,5 @@
+version=1
+title=Car_Physics_Improved
+description=Two alternative Build 42 vehicle-physics mods in one Workshop item. V1 ports the legacy drivetrain style to ZombieBuddy; V2 is the independent new physics model. Enable only one version at a time.
+tags=Build 42;
+visibility=private

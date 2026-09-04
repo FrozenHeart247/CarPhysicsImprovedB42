@@ -1,0 +1,7 @@
+{
+    "ContextMenu_CPI_V1_TireDebug": "CPI: быстрый тест шин",
+    "ContextMenu_CPI_V1_SelectedTire": "Выбранная шина",
+    "ContextMenu_CPI_V1_AllTires": "Все установленные шины",
+    "ContextMenu_CPI_V1_TireCondition": "Состояние",
+    "ContextMenu_CPI_V1_TirePressure": "Давление"
+}

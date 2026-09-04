@@ -1,0 +1,80 @@
+VERSION = 1,
+
+option CarPhysicsImprovedV1B42.TorqueModifierSport
+{ type = double, min = 0, max = 5, default = 1, page = CPI_V1_Physics, translation = CPI_V1_TorqueSport, }
+option CarPhysicsImprovedV1B42.TorqueModifierStandard
+{ type = double, min = 0, max = 5, default = 1, page = CPI_V1_Physics, translation = CPI_V1_TorqueStandard, }
+option CarPhysicsImprovedV1B42.TorqueModifierHeavy
+{ type = double, min = 0, max = 5, default = 1, page = CPI_V1_Physics, translation = CPI_V1_TorqueHeavy, }
+option CarPhysicsImprovedV1B42.TorqueMultiplierLimit
+{ type = double, min = 1, max = 4, default = 2.5, page = CPI_V1_Physics, translation = CPI_V1_TorqueLimit, }
+option CarPhysicsImprovedV1B42.ReverseSpeedMax
+{ type = double, min = 5, max = 120, default = 40, page = CPI_V1_Physics, translation = CPI_V1_ReverseSpeed, }
+
+option CarPhysicsImprovedV1B42.AerodynamicDragSport
+{ type = double, min = 0, max = 10, default = 0.70, page = CPI_V1_Resistance, translation = CPI_V1_AeroSport, }
+option CarPhysicsImprovedV1B42.AerodynamicDragStandard
+{ type = double, min = 0, max = 10, default = 1, page = CPI_V1_Resistance, translation = CPI_V1_AeroStandard, }
+option CarPhysicsImprovedV1B42.AerodynamicDragHeavy
+{ type = double, min = 0, max = 10, default = 1.5, page = CPI_V1_Resistance, translation = CPI_V1_AeroHeavy, }
+option CarPhysicsImprovedV1B42.RollingResistance
+{ type = double, min = 0, max = 10, default = 0.05, page = CPI_V1_Resistance, translation = CPI_V1_Rolling, }
+option CarPhysicsImprovedV1B42.RollingResistanceSpeed
+{ type = double, min = 0, max = 10, default = 0.1, page = CPI_V1_Resistance, translation = CPI_V1_RollingSpeed, }
+option CarPhysicsImprovedV1B42.OffroadRollingResistance
+{ type = double, min = 0, max = 10, default = 0.2, page = CPI_V1_Resistance, translation = CPI_V1_OffroadRolling, }
+option CarPhysicsImprovedV1B42.OffroadRollingResistanceSpeed
+{ type = double, min = 0, max = 10, default = 1.0, page = CPI_V1_Resistance, translation = CPI_V1_OffroadRollingSpeed, }
+
+option CarPhysicsImprovedV1B42.OverallTraction
+{ type = double, min = 0, max = 10, default = 1, page = CPI_V1_Traction, translation = CPI_V1_OverallTraction, }
+option CarPhysicsImprovedV1B42.AccelerationTraction
+{ type = double, min = 0, max = 10, default = 1, page = CPI_V1_Traction, translation = CPI_V1_AccelerationTraction, }
+option CarPhysicsImprovedV1B42.TractionOffroad
+{ type = double, min = 0, max = 1, default = 0.6, page = CPI_V1_Traction, translation = CPI_V1_OffroadTraction, }
+option CarPhysicsImprovedV1B42.TractionRain
+{ type = double, min = 0, max = 1, default = 0.7, page = CPI_V1_Traction, translation = CPI_V1_RainTraction, }
+option CarPhysicsImprovedV1B42.TractionSnow
+{ type = double, min = 0, max = 1, default = 0.4, page = CPI_V1_Traction, translation = CPI_V1_SnowTraction, }
+option CarPhysicsImprovedV1B42.HeavyDutyOffroadAdvantagePercent
+{ type = integer, min = 0, max = 100, default = 60, page = CPI_V1_Traction, translation = CPI_V1_HeavyDutyOffroadAdvantagePercent, }
+option CarPhysicsImprovedV1B42.HeavyDutyRainAdvantagePercent
+{ type = integer, min = 0, max = 100, default = 45, page = CPI_V1_Traction, translation = CPI_V1_HeavyDutyRainAdvantagePercent, }
+option CarPhysicsImprovedV1B42.HeavyDutySnowAdvantagePercent
+{ type = integer, min = 0, max = 100, default = 60, page = CPI_V1_Traction, translation = CPI_V1_HeavyDutySnowAdvantagePercent, }
+option CarPhysicsImprovedV1B42.HeavyDutyOffroadResistancePercent
+{ type = integer, min = 10, max = 100, default = 55, page = CPI_V1_Traction, translation = CPI_V1_HeavyDutyOffroadResistancePercent, }
+option CarPhysicsImprovedV1B42.TerrainHandlingInfluencePercent
+{ type = integer, min = 0, max = 100, default = 45, page = CPI_V1_Traction, translation = CPI_V1_TerrainHandlingInfluencePercent, }
+
+option CarPhysicsImprovedV1B42.SlideMechanics
+{ type = boolean, default = true, page = CPI_V1_Slides, translation = CPI_V1_SlideMechanics, }
+option CarPhysicsImprovedV1B42.DriftIntensity
+{ type = double, min = 0, max = 2, default = 1, page = CPI_V1_Slides, translation = CPI_V1_DriftIntensity, }
+option CarPhysicsImprovedV1B42.PowerDriftRotation
+{ type = integer, min = 0, max = 3000, default = 2000, page = CPI_V1_Slides, translation = CPI_V1_PowerDriftRotation, }
+option CarPhysicsImprovedV1B42.HandbrakeDriftRotation
+{ type = integer, min = 0, max = 3000, default = 2000, page = CPI_V1_Slides, translation = CPI_V1_HandbrakeDriftRotation, }
+option CarPhysicsImprovedV1B42.PowerDriftGripPercent
+{ type = integer, min = 25, max = 100, default = 35, page = CPI_V1_Slides, translation = CPI_V1_PowerDriftGripPercent, }
+option CarPhysicsImprovedV1B42.HandbrakeDriftGripPercent
+{ type = integer, min = 25, max = 100, default = 35, page = CPI_V1_Slides, translation = CPI_V1_HandbrakeDriftGripPercent, }
+option CarPhysicsImprovedV1B42.DriftSteeringPercent
+{ type = integer, min = 100, max = 200, default = 150, page = CPI_V1_Slides, translation = CPI_V1_DriftSteeringPercent, }
+option CarPhysicsImprovedV1B42.StabilityAssist
+{ type = double, min = 0, max = 2, default = 1, page = CPI_V1_Slides, translation = CPI_V1_StabilityAssist, }
+option CarPhysicsImprovedV1B42.PowerDriftDelay
+{ type = double, min = 0.3, max = 2, default = 0.8, page = CPI_V1_Slides, translation = CPI_V1_PowerDriftDelay, }
+option CarPhysicsImprovedV1B42.ClutchKick
+{ type = boolean, default = true, page = CPI_V1_Slides, translation = CPI_V1_ClutchKick, }
+
+option CarPhysicsImprovedV1B42.PlantImpulse
+{ type = double, min = 0, max = 10, default = 0.3, page = CPI_V1_Impulses, translation = CPI_V1_PlantImpulse, }
+option CarPhysicsImprovedV1B42.ZombieImpulse
+{ type = double, min = 0, max = 10, default = 0.5, page = CPI_V1_Impulses, translation = CPI_V1_ZombieImpulse, }
+option CarPhysicsImprovedV1B42.CorpseImpulse
+{ type = double, min = 0, max = 10, default = 1, page = CPI_V1_Impulses, translation = CPI_V1_CorpseImpulse, }
+option CarPhysicsImprovedV1B42.CorpseBump
+{ type = double, min = 0, max = 3, default = 1, page = CPI_V1_Impulses, translation = CPI_V1_CorpseBump, }
+option CarPhysicsImprovedV1B42.ObstacleSlowdown
+{ type = double, min = 0, max = 2, default = 0.3, page = CPI_V1_Impulses, translation = CPI_V1_ObstacleSlowdown, }

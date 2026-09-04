@@ -1,5 +1,5 @@
 {
-    "Sandbox_CPI_V1_Physics": "CPI V1: Legacy drivetrain",
+    "Sandbox_CPI_V1_Physics": "CPI V1: Drivetrain",
     "Sandbox_CPI_V1_Resistance": "CPI V1: Resistance",
     "Sandbox_CPI_V1_Traction": "CPI V1: Traction",
     "Sandbox_CPI_V1_Slides": "CPI V1: Drift and skid",
@@ -34,15 +34,15 @@
     "Sandbox_CPI_V1_SlideMechanics": "Enable drift and natural skid mechanics",
     "Sandbox_CPI_V1_DriftIntensity": "Intentional drift intensity",
     "Sandbox_CPI_V1_PowerDriftRotation": "Power-drift rotation",
-    "Sandbox_CPI_V1_PowerDriftRotation_tooltip": "Yaw strength generated directly from the current steering input during power drift and clutch kick. BVD-like baseline: 2000.",
+    "Sandbox_CPI_V1_PowerDriftRotation_tooltip": "Yaw strength during power drift and clutch kick. Dedicated-key drift has separate settings in Mod Options. Baseline: 2000.",
     "Sandbox_CPI_V1_HandbrakeDriftRotation": "Handbrake-drift rotation",
-    "Sandbox_CPI_V1_HandbrakeDriftRotation_tooltip": "Yaw strength generated directly from the current steering input while the handbrake slide is active. BVD-like baseline: 2000.",
+    "Sandbox_CPI_V1_HandbrakeDriftRotation_tooltip": "Yaw strength generated directly from the current steering input while the handbrake slide is active. Default: 2000.",
     "Sandbox_CPI_V1_PowerDriftGripPercent": "Power-drift wheel grip (%%)",
-    "Sandbox_CPI_V1_PowerDriftGripPercent_tooltip": "Temporary wheel-friction level during power drift and clutch kick. Lower values produce a longer, looser slide.",
+    "Sandbox_CPI_V1_PowerDriftGripPercent_tooltip": "Wheel friction during power drift and clutch kick. Dedicated-key drift has separate settings in Mod Options. Lower values produce a looser slide.",
     "Sandbox_CPI_V1_HandbrakeDriftGripPercent": "Handbrake-drift wheel grip (%%)",
     "Sandbox_CPI_V1_HandbrakeDriftGripPercent_tooltip": "Temporary wheel-friction level during handbrake drift. Lower values make the rear break away more easily.",
     "Sandbox_CPI_V1_DriftSteeringPercent": "Steering during drift (%%)",
-    "Sandbox_CPI_V1_DriftSteeringPercent_tooltip": "Steering multiplier only while an intentional slide is actively sustained. 100%% disables the extra drift steering boost.",
+    "Sandbox_CPI_V1_DriftSteeringPercent_tooltip": "Angle boost during handbrake/power slides and clutch kick. Dedicated-key drift uses its own steering-response setting in Mod Options. 100%% disables the boost.",
     "Sandbox_CPI_V1_StabilityAssist": "Uncontrolled-slide recovery strength",
     "Sandbox_CPI_V1_PowerDriftDelay": "Full-throttle drift entry delay (seconds)",
     "Sandbox_CPI_V1_ClutchKick": "Enable high-RPM clutch kick",
@@ -56,5 +56,5 @@
     "Sandbox_CPI_V1_CorpseBump_tooltip": "Strength of the separate vertical bump from corpses, prone zombies, animals and other characters under the wheels. 1.0 is moderate and 3.0 is strong. B42's weak cap is replaced by a wider safety cap; repeats remain limited to once per 0.08 seconds.",
     "Sandbox_CPI_V1_ObstacleSlowdown": "Bush and object speed limiter",
     "Sandbox_CPI_V1_ObstacleSlowdown_tooltip": "Separate vanilla CarSlowFactor used by bushes, hedges and breakable objects. 1.0 is vanilla; 0 removes the added object speed limit. This does not replace plant impulse.",
-    "Sandbox_CarPhysicsImprovedV1B42": "Car Physics Improved V1 (Legacy)"
+    "Sandbox_CarPhysicsImprovedV1B42": "Car Physics Improved V1"
 }

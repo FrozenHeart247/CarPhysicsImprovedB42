@@ -5,12 +5,12 @@ CarPhysicsImprovedV1 = CarPhysicsImprovedV1 or {}
 local ModJava = CarPhysicsImprovedV1Mod
 CarPhysicsImprovedV1.javaReady = ModJava ~= nil
 
-local options = PZAPI.ModOptions:create("CarPhysicsImprovedV1B42", "Car Physics Improved V1 (Legacy)")
+local options = PZAPI.ModOptions:create("CarPhysicsImprovedV1B42", "Car Physics Improved V1")
 if not CarPhysicsImprovedV1.javaReady then
     options:addDescription("Java runtime is unavailable. Approve the V1 JAR in ZombieBuddy and fully restart the game.")
 end
 
-local enabled = options:addTickBox("Enabled", "Enable V1 legacy physics", true,
+local enabled = options:addTickBox("Enabled", "Enable V1 physics", true,
     "Disables only V1; the vanilla controller remains available.")
 local manual = options:addTickBox("ManualTransmission", "Manual transmission", false,
     "Use the exact key and modifier combinations configured below to select R, N and forward gears.")
@@ -20,27 +20,41 @@ local skidSound = options:addTickBox("SkidSound", "Burnout and skid sound", true
     "Plays only after wheelspin or physical tire slip is confirmed; ordinary cornering stays silent.")
 local skidMarks = options:addTickBox("SkidMarks", "Temporary tire marks", true,
     "Draws client-local rear-wheel marks during confirmed burnout, braking skid or slide. Does not modify the map or save.")
-local skidMarkLifetime = options:addSlider("SkidMarkLifetime", "Tire mark lifetime (seconds)", 5, 60, 1, 25,
+local skidMarkLifetime = options:addSlider("SkidMarkLifetime", "Tire mark lifetime (seconds)", 5, 60, 1, 60,
     "Visual lifetime only. Older marks fade out and are discarded.")
-local skidMarkOpacity = options:addSlider("SkidMarkOpacity", "Tire mark opacity", 0.2, 1.0, 0.05, 0.70,
+local skidMarkOpacity = options:addSlider("SkidMarkOpacity", "Tire mark opacity", 0.2, 1.0, 0.05, 0.25,
     "Local visual opacity; it does not change tire physics.")
 local SHIFT_UP_BINDING = "Shift up"
 local SHIFT_DOWN_BINDING = "Shift down"
+local DRIFT_BINDING = "CPI V1 drift (hold)"
 local shiftUp = options:addKeyBind("ShiftUp", SHIFT_UP_BINDING, Keyboard.KEY_UP,
     "Used only with Manual transmission.")
 local shiftDown = options:addKeyBind("ShiftDown", SHIFT_DOWN_BINDING, Keyboard.KEY_DOWN,
     "Used only with Manual transmission.")
+local driftKey = options:addKeyBind("DriftKey", DRIFT_BINDING, Keyboard.KEY_LSHIFT,
+    "Default: Left Shift. Hold with steering above 20 km/h for reference-style drift without handbrake. Gear-shift combinations take priority in manual mode.")
+driftKey.shift = false
+driftKey.ctrl = false
+driftKey.alt = false
+local keyDriftRotation = options:addSlider("KeyDriftRotation", "Key drift: rotation", 0, 3000, 100, 2000,
+    "Reference default: 2000. Current steering determines yaw direction. Native mass is not changed; the reference's mass normalization is compensated in yaw only.")
+local keyDriftGrip = options:addSlider("KeyDriftGrip", "Key drift: grip multiplier", 0.10, 1.0, 0.05, 0.35,
+    "Reference default: 0.35. Multiplies capped tire/road grip on all wheels, only during active key drift. Lower values allow more sliding.")
+local keyDriftSteer = options:addSlider("KeyDriftSteer", "Key drift: steering response", 1.0, 2.0, 0.1, 1.5,
+    "Reference default: 1.5. Steering response rate while holding the key; the native speed-dependent angle limit remains.")
+local keyDriftMinSpeed = options:addSlider("KeyDriftMinSpeed", "Key drift: minimum speed (km/h)", 0, 60, 1, 20,
+    "Reference default: 20 km/h. Grip loss and yaw need speed above this threshold and steering input above 0.25. No throttle, gear or upper-speed gate.")
 
 local steeringFactorLow = options:addSlider("SteeringFactorLow", "Steering input: low speed", 0, 3, 0.05, 1.0,
-    "Legacy default: 1.0")
+    "Default: 1.0")
 local steeringFactorHigh = options:addSlider("SteeringFactorHigh", "Steering input: high speed", 0, 2, 0.05, 0.1,
-    "Legacy default: 0.1")
+    "Default: 0.1")
 local centeringLow = options:addSlider("CenteringLow", "Steering return: low speed", 0, 3, 0.05, 1.0,
-    "Legacy default: 1.0")
+    "Default: 1.0")
 local centeringHigh = options:addSlider("CenteringHigh", "Steering return: high speed", 0, 2, 0.05, 0.1,
-    "Legacy default: 0.1")
+    "Default: 0.1")
 local snapback = options:addSlider("Snapback", "Opposite-direction snapback", 0, 6, 0.1, 3.0,
-    "Speeds up steering when changing direction. Legacy default: 3.0")
+    "Speeds up steering when changing direction. Default: 3.0")
 local steeringHighSpeed = options:addSlider("SteeringHighSpeed", "High-speed reference (km/h)", 10, 120, 1, 75,
     "Speed at which the high-speed steering factors are fully applied.")
 
@@ -63,6 +77,7 @@ end
 local function refreshKeyModifiers()
     keyModifiers[SHIFT_UP_BINDING] = emptyModifiers()
     keyModifiers[SHIFT_DOWN_BINDING] = emptyModifiers()
+    keyModifiers[DRIFT_BINDING] = emptyModifiers()
     local found = {}
     local ok, reader = pcall(getFileReader, "keysB42.ini", true)
     if ok and reader then
@@ -95,6 +110,13 @@ local function refreshKeyModifiers()
     end
     useElementWhenFileHasNoEntry(SHIFT_UP_BINDING, shiftUp)
     useElementWhenFileHasNoEntry(SHIFT_DOWN_BINDING, shiftDown)
+    useElementWhenFileHasNoEntry(DRIFT_BINDING, driftKey)
+    -- ModOptions persists the primary key separately. Restore modifier metadata
+    -- before MainOptions builds its key dialog, including after a full restart.
+    local driftModifiers = keyModifiers[DRIFT_BINDING]
+    driftKey.shift = driftModifiers.shift
+    driftKey.ctrl = driftModifiers.ctrl
+    driftKey.alt = driftModifiers.alt
 end
 
 local function modifiersMatch(expected)
@@ -357,9 +379,24 @@ end
 
 local function applyOptions()
     refreshKeyModifiers()
+    local driftModifiers = keyModifiers[DRIFT_BINDING]
+    callJava("configureDriftKey", driftKey:getValue(),
+        driftModifiers.shift, driftModifiers.ctrl, driftModifiers.alt)
+    local upModifiers = keyModifiers[SHIFT_UP_BINDING]
+    local downModifiers = keyModifiers[SHIFT_DOWN_BINDING]
+    callJava("configureShiftKeys", shiftUp:getValue(), upModifiers.shift, upModifiers.ctrl, upModifiers.alt,
+        shiftDown:getValue(), downModifiers.shift, downModifiers.ctrl, downModifiers.alt)
+    -- The controller owns this chord. A globally registered mod binding would
+    -- shadow vanilla Space even on foot or with V1 disabled. Keep the saved UI
+    -- binding, but unregister its native action in memory (no INI rewrite).
+    getCore():addKeyBinding(DRIFT_BINDING, 0, 0, false, false, false)
     callJava("setEnabled", enabled:getValue())
     callJava("setManualTransmission", manual:getValue())
     callJava("setTelemetry", telemetry:getValue())
+    -- Ignore saved 0.4.19/20 experiment settings; the rear-only model is retired.
+    callJava("configureRearAxleDrift", false, 0.45)
+    callJava("configureKeyDrift", keyDriftRotation:getValue(), keyDriftGrip:getValue(),
+        keyDriftSteer:getValue(), keyDriftMinSpeed:getValue())
     callJava("configureTireTracks",
         skidMarks:getValue(), skidMarkLifetime:getValue(), skidMarkOpacity:getValue())
     callJava("configurePhysics",

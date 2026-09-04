@@ -1,0 +1,4 @@
+Manifest-Version: 1.0
+Premain-Class: dev.carphysicsimproved.v1.runtime.LegacyAxleDriftPatchTest
+Can-Redefine-Classes: true
+
