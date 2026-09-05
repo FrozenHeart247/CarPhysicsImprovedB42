@@ -1,5 +1,5 @@
 version=1
 title=Car_Physics_Improved
-description=Vehicle physics for Build 42 and ZombieBuddy with a unified drivetrain, controlled drift, tire wear, generated tire marks, and terrain-aware handling. Java source code and build instructions are included.
+description=Vehicle Physics for Project Zomboid
 tags=Build 42;
 visibility=private
