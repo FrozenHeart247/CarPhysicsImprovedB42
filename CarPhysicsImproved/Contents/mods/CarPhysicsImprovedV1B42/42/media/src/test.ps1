@@ -71,6 +71,9 @@ if ($LASTEXITCODE -ne 0) {
     throw "LegacyZeroPowerTest failed with exit code $LASTEXITCODE"
 }
 
+& $java '-cp' $testClasses 'dev.carphysicsimproved.v1.physics.LegacyLaunchDynamicsTest'
+if ($LASTEXITCODE -ne 0) { throw 'LegacyLaunchDynamicsTest failed' }
+
 & $java '-cp' $testClasses 'dev.carphysicsimproved.v1.physics.LegacyPoweredRegressionTest'
 if ($LASTEXITCODE -ne 0) {
     throw "LegacyPoweredRegressionTest failed with exit code $LASTEXITCODE"
@@ -131,12 +134,17 @@ if ($LASTEXITCODE -ne 0) {
     throw "ProneImpulseLimiterTest failed with exit code $LASTEXITCODE"
 }
 
-$runtimeClasspath = $testClasses + [System.IO.Path]::PathSeparator + $zombieBuddyJar + `
+$productionJar = Join-Path $outputRoot 'production\dist\car-physics-improved-v1.jar'
+$runtimeClasspath = $productionJar + [System.IO.Path]::PathSeparator + $testClasses + `
+    [System.IO.Path]::PathSeparator + $zombieBuddyJar + `
     [System.IO.Path]::PathSeparator + $gameJar
 & $gameJava '-cp' $runtimeClasspath 'dev.carphysicsimproved.v1.runtime.RuntimeAbiSmokeTest'
 if ($LASTEXITCODE -ne 0) {
     throw "RuntimeAbiSmokeTest failed with exit code $LASTEXITCODE"
 }
+
+& $gameJava '-cp' $runtimeClasspath 'dev.carphysicsimproved.v1.runtime.LegacyReleaseCorrectionsTest'
+if ($LASTEXITCODE -ne 0) { throw 'LegacyReleaseCorrectionsTest failed' }
 
 & $gameJava '-cp' $runtimeClasspath 'dev.carphysicsimproved.v1.runtime.LegacyKeyDriftAdapterTest'
 if ($LASTEXITCODE -ne 0) {
@@ -176,6 +184,10 @@ if ($LASTEXITCODE -ne 0) {
 if ($LASTEXITCODE -ne 0) {
     throw "LegacyMultiplayerPatchTest failed with exit code $LASTEXITCODE"
 }
+
+& $gameJava "-javaagent:$patchTestAgent" '-cp' $runtimeClasspath `
+    'dev.carphysicsimproved.v1.runtime.LegacyReleasePatchTest'
+if ($LASTEXITCODE -ne 0) { throw 'LegacyReleasePatchTest failed' }
 
 & $gameJava '-cp' $runtimeClasspath 'dev.carphysicsimproved.v1.runtime.LuaSyntaxSmokeTest' `
     $clientLua $tireDebugLua $apiLua

@@ -1,6 +1,8 @@
 package dev.carphysicsimproved.v1.runtime;
 
 import dev.carphysicsimproved.v1.physics.LegacyPhysics;
+import dev.carphysicsimproved.v1.physics.LegacyLaunchDynamics;
+import dev.carphysicsimproved.v1.physics.LegacyTerrainDynamics;
 import pzmod.carphysicsimproved.v1.CarPhysicsImprovedV1Mod;
 import java.lang.reflect.Field;
 
@@ -13,9 +15,11 @@ public final class LegacyMultiplayerRuntimeTest {
         field(LegacyHooks.class, "access").set(null, access);
         CarPhysicsImprovedV1Mod.setEnabled(true);
         speedLimit(access);
+        heavyLaunchDelivery(access);
+        launchGateLifecycle(access);
         sessions(access);
         check(!(Boolean)field(LegacyHooks.class, "failed").get(null), "No swallowed adapter failure");
-        System.out.println("LegacyMultiplayerRuntimeTest: final force gate, SP/MP/server ownership, "
+        System.out.println("LegacyMultiplayerRuntimeTest: heavy launch delivery, final force gate, SP/MP/server ownership, "
                 + "pre-vanilla RPM/gear, owner transitions and friction/effect cleanup passed (mock native runtime)");
     }
 
@@ -41,6 +45,10 @@ public final class LegacyMultiplayerRuntimeTest {
         replace(a, "vehicleSetSteering", Car.class.getMethod("setCurrentSteering", float.class));
         replace(a, "scriptWheelFriction", Script.class.getField("wheelFriction"));
         replace(a, "scriptToBullet", Script.class.getMethod("toBullet"));
+        replace(a, "vehicleTowedBy", Car.class.getMethod("getVehicleTowedBy"));
+        replace(a, "vehicleInvalidAhead", Car.class.getMethod("isInvalidChunkAhead"));
+        replace(a, "vehicleInvalidBehind", Car.class.getMethod("isInvalidChunkBehind"));
+        replace(a, "vehicleBrakingForce", Car.class.getMethod("getBrakingForce"));
         replace(a, "controllerVehicle", Controller.class.getField("vehicle"));
         replace(a, "controllerEngineForce", Controller.class.getField("engineForce"));
         replace(a, "controllerBrakingForce", Controller.class.getField("brakingForce"));
@@ -89,6 +97,61 @@ public final class LegacyMultiplayerRuntimeTest {
         Flags.client = true;
         check(a.controlledDriver(car) == null, "Server flag wins if both flags are set");
         Flags.server = false;
+    }
+
+    private static void heavyLaunchDelivery(PzLegacyAccess a) throws Exception {
+        Car car = new Car();
+        Controller controller = new Controller(car);
+        var spec = new LegacyPhysics.Spec("Base.BusDelivery", 1315, 505, 55,
+                750, 4500, 4350, 3, LegacyPhysics.legacyRatios(4), 50, .8, 1, 2);
+        var source = new LegacyPhysics.Output(1, 2945, 7.5, .12, 9, 1.12, 0, 2849, 1, 6455, 0);
+        var motion = new PzLegacyAccess.Motion(3, 0, 0, 1, 0, 3, 0, 0);
+        for (boolean client : new boolean[]{false, true}) {
+            Flags.client = client;
+            Options.instance.speedLimit.value = 10;
+            for (double speed : new double[]{9.5, 10.5}) {
+                car.speed = speed;
+                for (boolean offroad : new boolean[]{false, true}) {
+                var terrain = new LegacyTerrainDynamics.Output(LegacyTerrainDynamics.Profile.TERRAIN,
+                        1, 1, 1, 0, 0, offroad, false);
+                var output = LegacyLaunchDynamics.withDelivery(source,
+                        LegacyLaunchDynamics.forceScale(spec, source.gear(), car.speed, .5,
+                                terrain, new LegacyLaunchDynamics.State(), 1.0 / 60));
+                double expected = client && speed >= 10 ? 0 : offroad ? 2945 : 1472.5;
+                near(a.apply(controller, car, output, motion, .12, 1.0 / 60), expected,
+                        "Launch reduction before final server speed gate");
+                near(controller.engineForce, expected, "Network/controller gets reduced launch force");
+                near(Native.engine, expected, "Native control gets reduced launch force");
+                near(Native.brake, 7.5, "Launch reduction never adds braking");
+                near(Native.steer, .12, "Launch reduction never changes steering");
+                near(car.rpm, source.engineRpm(), "Engine sound RPM retained");
+                near(car.script.wheelFriction, 1.8, "No friction write from launch filter");
+                }
+            }
+        }
+        Options.instance.speedLimit.value = 60;
+        Flags.client = true;
+    }
+
+    private static void launchGateLifecycle(PzLegacyAccess a) throws Exception {
+        Car car = new Car();
+        var spec = new LegacyPhysics.Spec("Base.BusGate", 1315, 505, 55,
+                750, 4500, 4350, 3, LegacyPhysics.legacyRatios(4), 50, .8, 1, 2);
+        var dry = new LegacyTerrainDynamics.Output(LegacyTerrainDynamics.Profile.TERRAIN,
+                1, 1, 1, 0, 0, false, false);
+        var wet = new LegacyTerrainDynamics.Output(LegacyTerrainDynamics.Profile.TERRAIN,
+                1, 1, 1, .5, 0, false, false);
+        var before = LegacyHooks.prepareSession(a, car);
+        var beforeGate = (LegacyLaunchDynamics.State)field(before.getClass(), "launch").get(before);
+        near(LegacyLaunchDynamics.forceScale(spec, 1, 10, .5, dry, beforeGate, .05), .5, "Seed dry-road weight");
+        car.ownerId++;
+        LegacyHooks.onVehicleAuthorizationChanged(car);
+        var after = LegacyHooks.prepareSession(a, car);
+        var afterGate = (LegacyLaunchDynamics.State)field(after.getClass(), "launch").get(after);
+        check(before != after && beforeGate != afterGate, "Ownership handoff discards the old surface blend");
+        near(LegacyLaunchDynamics.forceScale(spec, 1, 10, .5, wet, afterGate, .05), 1,
+                "New owner in rain cannot inherit the dry-road penalty");
+        LegacyHooks.releaseVehicleSessions();
     }
 
     private static void sessions(PzLegacyAccess a) throws Exception {
@@ -243,6 +306,12 @@ public final class LegacyMultiplayerRuntimeTest {
         public void toBullet() { submissions++; }
     }
     public static class Car {
+        public boolean invalidAhead, invalidBehind;
+        public Object towedBy;
+        public Object getVehicleTowedBy() { return towedBy; }
+        public boolean isInvalidChunkAhead() { return invalidAhead; }
+        public boolean isInvalidChunkBehind() { return invalidBehind; }
+        public float getBrakingForce() { return 30; }
         public short id = 123;
         public short ownerId = 1;
         public Object authorization = "Local";

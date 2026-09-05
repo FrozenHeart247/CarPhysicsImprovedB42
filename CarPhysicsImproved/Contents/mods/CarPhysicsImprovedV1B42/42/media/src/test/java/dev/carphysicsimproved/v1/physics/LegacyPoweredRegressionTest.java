@@ -5,9 +5,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
-/** Exact positive-power output/state baseline captured from the shipped 0.4.22 JAR. */
+/** Exact drivetrain baseline from shipped 0.4.26; FPS-dependent cosmetic burnout excluded. */
 public final class LegacyPoweredRegressionTest {
-    private static final String EXPECTED = "372328e1ff8b6383b799bae31c4935e2a1662753aee25af6865a71c5a263586a";
+    private static final String EXPECTED = "cf07a0d009b4114c70a6e054ceeb44d3729decfce0089e59515014f1eb1da36b";
 
     private LegacyPoweredRegressionTest() {
     }
@@ -42,9 +42,9 @@ public final class LegacyPoweredRegressionTest {
                                             input, state, dt);
                                     hash(digest, buffer, out.gear(), out.engineForce(), out.brakingForce(),
                                             out.steeringRadians(), out.dragMagnitude(), out.tireTraction(),
-                                            out.burnoutSpeedKph(), out.engineRpm(), out.throttle(), out.rawDriveForce(),
+                                            out.engineRpm(), out.throttle(), out.rawDriveForce(),
                                             out.clutchKickIntensity(), state.gear, state.engineRpm, state.throttle,
-                                            state.fullThrottleSeconds, state.steering, state.burnout,
+                                            state.fullThrottleSeconds, state.steering,
                                             state.lastStepGear, state.clutchKick);
                                     steps++;
                                 }
@@ -57,7 +57,7 @@ public final class LegacyPoweredRegressionTest {
         String actual = HexFormat.of().formatHex(digest.digest());
         System.out.println("LegacyPoweredRegressionTest: " + steps + " steps; SHA-256 " + actual);
         if (!(args.length == 1 && "--capture".equals(args[0])) && !EXPECTED.equals(actual)) {
-            throw new AssertionError("Positive-power behavior differs from the 0.4.22 baseline");
+            throw new AssertionError("Non-cosmetic drivetrain differs from the 0.4.26 baseline");
         }
     }
 

@@ -2,6 +2,7 @@ package pzmod.carphysicsimproved.v1;
 
 import dev.carphysicsimproved.v1.BuildInfo;
 import dev.carphysicsimproved.v1.physics.LegacyPhysics;
+import dev.carphysicsimproved.v1.physics.LegacyLaunchDynamics;
 import dev.carphysicsimproved.v1.physics.LegacyKeyDrift;
 import dev.carphysicsimproved.v1.physics.LegacySlideDynamics;
 import dev.carphysicsimproved.v1.physics.LegacyTerrainDynamics;
@@ -29,6 +30,7 @@ public final class CarPhysicsImprovedV1Mod {
     private static volatile double rearAxleGrip = 0.45;
     private static volatile LegacyKeyDrift.Tuning keyDriftTuning = LegacyKeyDrift.Tuning.defaults();
     private static volatile LegacyPhysics.Settings settings = LegacyPhysics.Settings.defaults();
+    private static volatile double heavyLaunchMultiplier = LegacyLaunchDynamics.DEFAULT_HEAVY_MULTIPLIER;
     private static volatile LegacySlideDynamics.Tuning slideTuning = LegacySlideDynamics.Tuning.defaults();
     private static volatile LegacyTerrainDynamics.Tuning terrainTuning = LegacyTerrainDynamics.Tuning.defaults();
     private static volatile double plantImpulse = 0.30;
@@ -98,6 +100,12 @@ public final class CarPhysicsImprovedV1Mod {
     }
 
     public static LegacyKeyDrift.Tuning keyDriftTuning() { return keyDriftTuning; }
+
+    public static void configureHeavyLaunch(double multiplier) {
+        heavyLaunchMultiplier = LegacyLaunchDynamics.sanitize(multiplier);
+    }
+
+    public static double heavyLaunchMultiplier() { return heavyLaunchMultiplier; }
 
     public static void configurePhysics(
             double sportTorque,

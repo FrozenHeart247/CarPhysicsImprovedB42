@@ -172,7 +172,9 @@ public final class LegacyPhysics {
                         dt * (1_800.0 + state.clutchKick * 4_200.0));
             }
             driveForce = Math.min(Math.max(0.0, rawDriveForce), tractionLimit);
-            burnoutSpeedKph = Math.max(0.0, (rawDriveForce - tractionLimit) * dt * 0.02 - 3.0);
+            // A slip signal is not a per-frame displacement. Preserve the former
+            // 60 Hz calibration without moving its entry threshold with FPS.
+            burnoutSpeedKph = Math.max(0.0, (rawDriveForce - tractionLimit) * (0.02 / 60.0) - 3.0);
             if (state.clutchKick > 0.0) {
                 double clutchSlipSpeedKph = Math.max(0.0, rawDriveForce - tractionLimit)
                         / Math.max(100.0, spec.massKg) * 3.6 * state.clutchKick;
@@ -274,10 +276,23 @@ public final class LegacyPhysics {
 
     public static double[] legacyRatios(int requestedGearCount) {
         return switch (requestedGearCount) {
+            case 1 -> new double[]{1.0};
+            case 2 -> new double[]{2.6, 1.0};
             case 3 -> new double[]{2.6, 1.6, 1.0};
             case 5 -> new double[]{3.2, 2.0, 1.5, 1.15, 0.9};
+            case 6, 7, 8 -> spreadRatios(requestedGearCount);
             default -> new double[]{3.0, 1.8, 1.3, 1.0};
         };
+    }
+
+    private static double[] spreadRatios(int count) {
+        double[] ratios = new double[count];
+        // Keep the familiar five-speed endpoints, distribute extra gears
+        // geometrically; do not invent unavailable manufacturer ratios.
+        for (int i = 0; i < count; i++) {
+            ratios[i] = 3.2 * Math.pow(0.9 / 3.2, (double) i / (count - 1));
+        }
+        return ratios;
     }
 
     private static double approach(double value, double target, double maximumDelta) {

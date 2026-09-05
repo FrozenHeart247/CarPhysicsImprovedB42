@@ -43,6 +43,11 @@ final class PzLegacyAccess {
 
     private final Method vehicleLocalPhysics;
     private final Method vehicleDriver;
+    private final Method vehicleTowedBy;
+    private final Method vehicleInvalidAhead;
+    private final Method vehicleInvalidBehind;
+    private final Method vehicleRegulator;
+    private final Method controllerGas;
     private final Method characterHasTrait;
     private final Method characterDead;
     private final Method keyboardDown;
@@ -164,6 +169,11 @@ final class PzLegacyAccess {
 
         vehicleLocalPhysics = method(vehicleClass, "isLocalPhysicSim");
         vehicleDriver = method(vehicleClass, "getDriver");
+        vehicleTowedBy = method(vehicleClass, "getVehicleTowedBy");
+        vehicleInvalidAhead = method(vehicleClass, "isInvalidChunkAhead");
+        vehicleInvalidBehind = method(vehicleClass, "isInvalidChunkBehind");
+        vehicleRegulator = method(vehicleClass, "isRegulator");
+        controllerGas = method(controllerClass, "isGas");
         characterHasTrait = method(characterClass, "hasTrait", characterTraitClass);
         characterDead = methodInHierarchy(characterClass, "isDead");
         keyboardDown = method(keyboardClass, "isKeyDown", int.class);
@@ -252,7 +262,7 @@ final class PzLegacyAccess {
     }
 
     Object controlledDriver(Object vehicle) throws ReflectiveOperationException {
-        if (!hasAuthority(vehicle)) return null;
+        if (!hasAuthority(vehicle) || invoke(vehicleTowedBy, vehicle) != null) return null;
         Object driver = invoke(vehicleDriver, vehicle);
         if (driver == null || (Boolean) invoke(characterDead, driver)) return null;
         // LocalCollide can grant physics ownership without granting ownership
@@ -365,6 +375,12 @@ final class PzLegacyAccess {
         return new Snapshot(script, legacySpec, slideSpec);
     }
 
+    double visualDeltaSeconds() throws ReflectiveOperationException {
+        Object time = invoke(gameTimeInstance, null);
+        return time == null ? 1.0 / 60.0
+                : clamp(((Number) invoke(gameTimePhysicsDelta, time)).doubleValue(), 0, .05);
+    }
+
     ConditionSnapshot conditions(Object vehicle, Snapshot snapshot) throws ReflectiveOperationException {
         Object script = snapshot.scriptIdentity;
         int wheelCount = Math.max(0, ((Number) invoke(scriptWheelCount, script)).intValue());
@@ -449,14 +465,27 @@ final class PzLegacyAccess {
     }
 
     Controls controls(Object controller, Object vehicle) throws ReflectiveOperationException {
+        return controls(controller, vehicle, currentGear(vehicle));
+    }
+
+    Controls controls(Object controller, Object vehicle, int selectedGear) throws ReflectiveOperationException {
         Object controls = controllerControls.get(controller);
         double throttle = (Boolean) invoke(vehicleKeyboardControlled, vehicle)
                 ? 1.0
                 : clamp(((Number) invoke(vehicleThrottle, vehicle)).doubleValue(), 0.0, 1.0);
-        return new Controls(
-                controlsForward.getBoolean(controls),
-                controlsBackward.getBoolean(controls),
-                controlsBrake.getBoolean(controls),
+        boolean forward = controlsForward.getBoolean(controls);
+        boolean backward = controlsBackward.getBoolean(controls);
+        boolean brake = controlsBrake.getBoolean(controls);
+        boolean shift = controlsShift.getBoolean(controls);
+        if (shift) { forward = false; backward = false; }
+        if (!forward && !backward && !brake && !shift
+                && (Boolean) invoke(vehicleRegulator, vehicle)
+                && (!CarPhysicsImprovedV1Mod.manualTransmission() || selectedGear > 0)
+                && (Boolean) invoke(controllerGas, controller)) {
+            forward = true;
+            throttle = clamp(((Number) invoke(vehicleThrottle, vehicle)).doubleValue(), 0, 1);
+        }
+        return new Controls(forward, backward, brake,
                 -clamp(controlsSteering.getFloat(controls), -1.0, 1.0),
                 throttle);
     }
@@ -583,6 +612,10 @@ final class PzLegacyAccess {
         float engine = (float) LegacyServerSpeedLimit.limitForce(
                 output.engineForce(), speedKph(vehicle), serverSpeedLimitKph());
         float braking = (float) output.brakingForce();
+        if (boundaryStop(vehicle, motion.longitudinalSpeedMps(), output.engineForce())) {
+            engine = 0;
+            braking = Math.max(braking, ((Number) invoke(vehicleBrakingForce, vehicle)).floatValue());
+        }
         float steering = (float) steeringRadians;
         controllerEngineForce.setFloat(controller, engine);
         controllerBrakingForce.setFloat(controller, braking);
@@ -603,7 +636,13 @@ final class PzLegacyAccess {
         return engine;
     }
 
-    void applySlideForces(Object vehicle, Motion motion, LegacySlideDynamics.Output output)
+    boolean boundaryStop(Object vehicle, double signedSpeed, double requestedForce)
+            throws ReflectiveOperationException {
+        return ((signedSpeed > .01 || requestedForce > 0) && (Boolean) invoke(vehicleInvalidAhead, vehicle))
+                || ((signedSpeed < -.01 || requestedForce < 0) && (Boolean) invoke(vehicleInvalidBehind, vehicle));
+    }
+
+    void applySlideForces(Object vehicle, Motion motion, LegacySlideCommand.Request output)
             throws ReflectiveOperationException {
         if (output == null) {
             return;
@@ -615,7 +654,7 @@ final class PzLegacyAccess {
                 (float) (rightX * output.lateralForce()),
                 0.0f,
                 (float) (rightZ * output.lateralForce()));
-        invoke(bulletTorque, null, id, 0.0f, (float) output.bulletYawTorque(), 0.0f);
+        invoke(bulletTorque, null, id, 0.0f, (float) output.yawTorque(), 0.0f);
     }
 
     /**
@@ -756,23 +795,7 @@ final class PzLegacyAccess {
         return clamp(skid, 0.0, 1.0);
     }
 
-    void applyBurnoutVisual(Object vehicle, double burnoutSpeedKph, double deltaSeconds) throws IllegalAccessException {
-        if (burnoutSpeedKph <= 0.1) {
-            return;
-        }
-        Object wheels = vehicleWheelInfo.get(vehicle);
-        int count = wheels == null ? 0 : Array.getLength(wheels);
-        for (int index = Math.max(0, count - 2); index < count; index++) {
-            Object wheel = Array.get(wheels, index);
-            float rotation = wheelRotation.getFloat(wheel);
-            wheelRotation.setFloat(wheel, rotation + (float) (burnoutSpeedKph * deltaSeconds * 0.12));
-        }
-    }
-
-    void applySlideVisual(Object vehicle, double slideBlend) throws ReflectiveOperationException {
-        if (slideBlend <= 0.02) {
-            return;
-        }
+    void applyBurnoutVisual(Object vehicle, double rotationOffset) throws ReflectiveOperationException {
         Object script = script(vehicle);
         Object wheels = vehicleWheelInfo.get(vehicle);
         int infoCount = wheels == null ? 0 : Array.getLength(wheels);
@@ -781,9 +804,8 @@ final class PzLegacyAccess {
         for (int index = 0; index < count; index++) {
             Object wheel = invoke(scriptWheel, script, index);
             Object info = Array.get(wheels, index);
-            float target = wheelFront.getBoolean(wheel) ? 0.48f : 0.30f;
-            float blended = (float) lerp(1.0, target, clamp(slideBlend, 0.0, 1.0));
-            wheelSkidInfo.setFloat(info, Math.min(wheelSkidInfo.getFloat(info), blended));
+            if (!wheelFront.getBoolean(wheel))
+                wheelRotation.setFloat(info, wheelRotation.getFloat(info) + (float) rotationOffset);
         }
     }
 

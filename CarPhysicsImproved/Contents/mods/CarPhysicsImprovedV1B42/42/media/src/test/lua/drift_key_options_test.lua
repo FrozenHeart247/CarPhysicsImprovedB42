@@ -1,7 +1,8 @@
 -- UI/INI wiring tests. Does not simulate GameKeyboard or Bullet.
 local clientFile = assert(arg[1], "client Lua path required")
-local function runCase(lines, key, savedMarks)
+local function runCase(lines, key, savedMarks, sandbox)
     local calls, bindings, events, options = {}, {}, {}, nil
+    SandboxVars = sandbox and { CarPhysicsImprovedV1B42 = sandbox } or nil
     require = function() end
     Keyboard = { KEY_UP = 200, KEY_DOWN = 208, KEY_SPACE = 57,
         KEY_LSHIFT = 42, KEY_RSHIFT = 54, KEY_LCONTROL = 29, KEY_RCONTROL = 157,
@@ -53,6 +54,7 @@ local function runCase(lines, key, savedMarks)
 end
 
 local calls, bindings, options = runCase({})
+assert(calls.configureHeavyLaunch[1] == .5, "Missing/new Sandbox value must send the 50 percent default")
 assert(options.title == "Car Physics Improved V1", "Mod Options title must not retain Legacy")
 assert(options.dict.SkidMarkLifetime.value == 60 and options.dict.SkidMarkOpacity.value == .25,
     "Tire mark defaults must be 60 seconds and 0.25 opacity")
@@ -71,6 +73,12 @@ assert(calls.configureDriftKey[1] == 42 and calls.configureDriftKey[2] == false,
     "Default must be standalone Left Shift even before opening options")
 assert(options.dict.DriftKey.shift == false, "Standalone Shift must not have an extra modifier")
 assert(bindings[1][2] == 0, "No global native action may shadow Space on foot/with V1 disabled")
+
+calls, bindings, options = runCase({}, nil, nil, { HeavyDutyLaunchPercent = 100 })
+assert(calls.configureHeavyLaunch[1] == 1, "100 percent must reach Java as exact passthrough")
+SandboxVars.CarPhysicsImprovedV1B42.HeavyDutyLaunchPercent = 85
+options.apply()
+assert(calls.configureHeavyLaunch[1] == .85, "Changed launch setting must be reapplied")
 
 calls, bindings, options = runCase({}, nil, { lifetime = 20, opacity = .8 })
 assert(calls.configureTireTracks[2] == 20 and calls.configureTireTracks[3] == .8,

@@ -48,7 +48,7 @@ public final class LegacyPhysicsTest {
         check(coastRpm != null && coastRpm.engineRpm() <= sport.idleRpm() + 1.0,
                 "coasting to rest must return engine RPM to idle");
 
-        LegacyPhysics.Spec powerful = spec("Base.TestPowerful", 900.0, 900.0, 120.0, 3, 5);
+        LegacyPhysics.Spec powerful = spec("Base.TestPowerful", 900.0, 3_600.0, 120.0, 3, 5);
         LegacyPhysics.Conditions poorGrip = new LegacyPhysics.Conditions(0.7, 0.4, 0.55, false);
         LegacyPhysics.State burnoutState = warmedState(1);
         LegacyPhysics.Output burnout = null;

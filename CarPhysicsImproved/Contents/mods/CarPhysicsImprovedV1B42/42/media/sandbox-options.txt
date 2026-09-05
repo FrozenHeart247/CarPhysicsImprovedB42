@@ -6,6 +6,8 @@ option CarPhysicsImprovedV1B42.TorqueModifierStandard
 { type = double, min = 0, max = 5, default = 1, page = CPI_V1_Physics, translation = CPI_V1_TorqueStandard, }
 option CarPhysicsImprovedV1B42.TorqueModifierHeavy
 { type = double, min = 0, max = 5, default = 1, page = CPI_V1_Physics, translation = CPI_V1_TorqueHeavy, }
+option CarPhysicsImprovedV1B42.HeavyDutyLaunchPercent
+{ type = double, min = 25, max = 100, default = 50, page = CPI_V1_Physics, translation = CPI_V1_HeavyLaunch, }
 option CarPhysicsImprovedV1B42.TorqueMultiplierLimit
 { type = double, min = 1, max = 4, default = 2.5, page = CPI_V1_Physics, translation = CPI_V1_TorqueLimit, }
 option CarPhysicsImprovedV1B42.ReverseSpeedMax

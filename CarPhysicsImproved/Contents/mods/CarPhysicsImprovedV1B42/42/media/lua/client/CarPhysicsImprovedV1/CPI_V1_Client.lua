@@ -21,7 +21,7 @@ local skidSound = options:addTickBox("SkidSound", "Burnout and skid sound", true
 local skidMarks = options:addTickBox("SkidMarks", "Temporary tire marks", true,
     "Draws client-local rear-wheel marks during confirmed burnout, braking skid or slide. Does not modify the map or save.")
 local skidMarkLifetime = options:addSlider("SkidMarkLifetime", "Tire mark lifetime (seconds)", 5, 60, 1, 60,
-    "Visual lifetime only. Older marks fade out and are discarded.")
+    "Maximum visual lifetime. Marks fade out; the oldest can disappear earlier when the 900-mark limit is reached.")
 local skidMarkOpacity = options:addSlider("SkidMarkOpacity", "Tire mark opacity", 0.2, 1.0, 0.05, 0.25,
     "Local visual opacity; it does not change tire physics.")
 local SHIFT_UP_BINDING = "Shift up"
@@ -417,6 +417,7 @@ local function applyOptions()
         sandboxValue("TractionOffroad", 0.6),
         sandboxValue("TractionRain", 0.7),
         sandboxValue("TractionSnow", 0.4))
+    callJava("configureHeavyLaunch", sandboxValue("HeavyDutyLaunchPercent", 50.0) / 100.0)
     callJava("configureTerrain",
         sandboxValue("HeavyDutyOffroadAdvantagePercent", 60.0) / 100.0,
         sandboxValue("HeavyDutyRainAdvantagePercent", 45.0) / 100.0,

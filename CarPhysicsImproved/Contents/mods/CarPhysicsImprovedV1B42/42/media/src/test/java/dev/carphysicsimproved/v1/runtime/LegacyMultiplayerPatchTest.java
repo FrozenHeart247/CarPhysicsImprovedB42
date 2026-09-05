@@ -107,7 +107,7 @@ public final class LegacyMultiplayerPatchTest {
                 };
             }
         }, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
-        check(frameForces[0] == 1, "Only the unchanged non-key slide force path remains in controller");
+        check(frameForces[0] == 0, "Neither key nor ordinary slide forces are submitted at frame cadence");
     }
 
     private static void verifyNative(ClassFileLocator locator, String name, Class<?> patch,

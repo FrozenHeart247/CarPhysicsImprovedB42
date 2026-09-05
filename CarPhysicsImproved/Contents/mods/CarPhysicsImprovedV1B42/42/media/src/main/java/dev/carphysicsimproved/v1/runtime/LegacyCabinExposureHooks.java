@@ -1,7 +1,9 @@
 package dev.carphysicsimproved.v1.runtime;
 
 import dev.carphysicsimproved.v1.physics.LegacyCabinExposure;
+import pzmod.carphysicsimproved.v1.CarPhysicsImprovedV1Mod;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
@@ -14,7 +16,7 @@ public final class LegacyCabinExposureHooks {
     }
 
     public static float adjustWindChill(Object player, float vanillaAmount) {
-        if (player == null || failed) {
+        if (player == null || failed || !CarPhysicsImprovedV1Mod.enabled()) {
             return vanillaAmount;
         }
         try {
@@ -34,24 +36,25 @@ public final class LegacyCabinExposureHooks {
         }
     }
 
-    /** Adds only the cases that B42 does not already handle itself. */
-    public static void afterWetnessUpdate(Object bodyDamage) {
-        if (bodyDamage == null || failed) {
-            return;
+    /** Amend the single vanilla clothing update, never run sweating/drying twice. */
+    public static RainInput adjustRainInputs(Object clothingWetness, float increase, float decrease) {
+        RainInput original = new RainInput(increase, decrease);
+        if (clothingWetness == null || failed || !CarPhysicsImprovedV1Mod.enabled()) {
+            return original;
         }
         try {
             Access current = access();
-            Object character = current.invoke(current.bodyDamageParent, bodyDamage);
+            Object character = current.clothingCharacter.get(clothingWetness);
             if (character == null) {
-                return;
+                return original;
             }
             Object vehicle = current.invoke(current.characterVehicle, character);
             if (vehicle == null) {
-                return;
+                return original;
             }
             WindshieldState windshield = current.windshieldState(vehicle);
             if (windshield.exposure() <= 0.0) {
-                return;
+                return original;
             }
 
             double speedKph = current.number(current.invoke(current.vehicleSpeed, vehicle));
@@ -59,30 +62,35 @@ public final class LegacyCabinExposureHooks {
             // while moving forwards. Its calculation is signed, so supplement
             // reverse movement but never double the ordinary vanilla case.
             if (windshield.windowDestroyed() && speedKph > 0.0) {
-                return;
+                return original;
             }
 
             Object climate = current.invoke(current.climateInstance, null);
             if (climate == null || !current.booleanValue(current.invoke(current.climateRaining, climate))) {
-                return;
+                return original;
             }
             double rainExposure = LegacyCabinExposure.rainExposure(
                     speedKph,
                     current.number(current.invoke(current.climateRainIntensity, climate)),
                     windshield.exposure());
             if (rainExposure <= 0.0) {
-                return;
+                return original;
             }
 
-            Object clothingWetness = current.invoke(current.characterClothingWetness, character);
-            if (clothingWetness != null) {
-                current.invoke(current.clothingUpdateWetness, clothingWetness,
-                        (float) rainExposure, 0.0F);
-            }
+            return mergeRain(original, rainExposure);
         } catch (ReflectiveOperationException | RuntimeException error) {
             reportOnce(error);
         }
+        return original;
     }
+
+    static RainInput mergeRain(RainInput vanilla, double rainExposure) {
+        if (!Double.isFinite(rainExposure) || rainExposure <= vanilla.increase()) return vanilla;
+        return new RainInput((float) Math.min(1, rainExposure),
+                (float) Math.max(0, vanilla.decrease() - rainExposure * 3));
+    }
+
+    public record RainInput(float increase, float decrease) { }
 
     public static void validateRuntimeAbi() throws ReflectiveOperationException {
         new Access();
@@ -114,9 +122,8 @@ public final class LegacyCabinExposureHooks {
     }
 
     private static final class Access {
-        private final Method bodyDamageParent;
+        private final Field clothingCharacter;
         private final Method characterVehicle;
-        private final Method characterClothingWetness;
         private final Method vehiclePartById;
         private final Method vehicleSpeed;
         private final Method partInventoryItem;
@@ -126,12 +133,9 @@ public final class LegacyCabinExposureHooks {
         private final Method climateInstance;
         private final Method climateRaining;
         private final Method climateRainIntensity;
-        private final Method clothingUpdateWetness;
 
         private Access() throws ReflectiveOperationException {
             ClassLoader loader = Thread.currentThread().getContextClassLoader();
-            Class<?> bodyDamageClass = Class.forName(
-                    "zombie.characters.BodyDamage.BodyDamage", false, loader);
             Class<?> characterClass = Class.forName("zombie.characters.IsoGameCharacter", false, loader);
             Class<?> vehicleClass = Class.forName("zombie.vehicles.BaseVehicle", false, loader);
             Class<?> vehiclePartOwnerClass = Class.forName(
@@ -142,9 +146,9 @@ public final class LegacyCabinExposureHooks {
             Class<?> clothingWetnessClass = Class.forName(
                     "zombie.characters.ClothingWetness", false, loader);
 
-            bodyDamageParent = method(bodyDamageClass, "getParentChar");
+            clothingCharacter = clothingWetnessClass.getDeclaredField("character");
+            clothingCharacter.setAccessible(true);
             characterVehicle = method(characterClass, "getVehicle");
-            characterClothingWetness = method(characterClass, "getClothingWetness");
             vehiclePartById = method(vehiclePartOwnerClass, "getPartById", String.class);
             vehicleSpeed = method(vehicleClass, "getCurrentSpeedKmHour");
             partInventoryItem = method(partClass, "getInventoryItem");
@@ -154,8 +158,6 @@ public final class LegacyCabinExposureHooks {
             climateInstance = method(climateClass, "getInstance");
             climateRaining = method(climateClass, "isRaining");
             climateRainIntensity = method(climateClass, "getRainIntensity");
-            clothingUpdateWetness = method(
-                    clothingWetnessClass, "updateWetness", float.class, float.class);
         }
 
         private WindshieldState windshieldState(Object vehicle) throws ReflectiveOperationException {

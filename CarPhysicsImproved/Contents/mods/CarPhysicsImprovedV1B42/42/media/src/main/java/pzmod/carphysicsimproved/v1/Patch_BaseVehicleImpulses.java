@@ -15,7 +15,9 @@ public final class Patch_BaseVehicleImpulses {
 
         @Patch.OnEnter
         public static void enter(@Patch.Argument(value = 1, readOnly = false) float multiplier) {
-            multiplier *= (float) CarPhysicsImprovedV1Mod.plantImpulse();
+            if (CarPhysicsImprovedV1Mod.enabled()) {
+                multiplier *= (float) CarPhysicsImprovedV1Mod.plantImpulse();
+            }
         }
     }
 
@@ -26,12 +28,13 @@ public final class Patch_BaseVehicleImpulses {
         }
 
         @Patch.OnEnter
-        public static void enter(@Patch.This Object vehicle) {
-            LegacyCollisionHooks.begin(vehicle, CarPhysicsImprovedV1Mod.zombieImpulse());
+        public static void enter(@Patch.This Object vehicle, @Patch.Argument(0) Object pedestrian) {
+            LegacyCollisionHooks.begin(vehicle, CarPhysicsImprovedV1Mod.enabled()
+                    ? CarPhysicsImprovedV1Mod.zombieImpulse() : 1.0);
         }
 
         @Patch.OnExit(onThrowable = Throwable.class)
-        public static void exit(@Patch.This Object vehicle) {
+        public static void exit(@Patch.This Object vehicle, @Patch.Argument(0) Object pedestrian) {
             LegacyCollisionHooks.end(vehicle);
         }
     }
@@ -43,12 +46,13 @@ public final class Patch_BaseVehicleImpulses {
         }
 
         @Patch.OnEnter
-        public static void enter(@Patch.This Object vehicle) {
-            LegacyCollisionHooks.begin(vehicle, CarPhysicsImprovedV1Mod.corpseImpulse());
+        public static void enter(@Patch.This Object vehicle, @Patch.Argument(0) Object corpse) {
+            LegacyCollisionHooks.begin(vehicle, CarPhysicsImprovedV1Mod.enabled()
+                    ? CarPhysicsImprovedV1Mod.corpseImpulse() : 1.0);
         }
 
         @Patch.OnExit(onThrowable = Throwable.class)
-        public static void exit(@Patch.This Object vehicle) {
+        public static void exit(@Patch.This Object vehicle, @Patch.Argument(0) Object corpse) {
             LegacyCollisionHooks.end(vehicle);
         }
     }
@@ -76,7 +80,7 @@ public final class Patch_BaseVehicleImpulses {
         @Patch.OnEnter
         public static void enter(@Patch.This Object vehicle) {
             LegacyCollisionHooks.beginObstacleSlowdown(
-                    vehicle, CarPhysicsImprovedV1Mod.obstacleSlowdown());
+                    vehicle, CarPhysicsImprovedV1Mod.enabled() ? CarPhysicsImprovedV1Mod.obstacleSlowdown() : 1.0);
         }
 
         @Patch.OnExit(onThrowable = Throwable.class)
