@@ -9,7 +9,10 @@ import dev.carphysicsimproved.v1.physics.LegacyTireEffects;
 import pzmod.carphysicsimproved.v1.CarPhysicsImprovedV1Mod;
 
 import java.util.Collections;
+import java.lang.ref.WeakReference;
+import java.util.Iterator;
 import java.util.Map;
+import java.util.Objects;
 import java.util.WeakHashMap;
 
 /** ZombieBuddy hook targets. Vanilla runs first; V1 submits the final control request. */
@@ -34,11 +37,26 @@ public final class LegacyHooks {
         }
         try {
             Object vehicle = current.vehicle(controller);
-            if (vehicle != null && current.hasAuthority(vehicle) && current.driftKeyHeld(vehicle)) {
+            if (vehicle != null && current.controlledDriver(vehicle) != null && current.driftKeyHeld(vehicle)) {
                 current.suppressDriftKeyBrake(controller);
             }
         } catch (Throwable error) {
             fail("drift key controls", error);
+        }
+    }
+
+    /** Capture incoming MP gear/RPM before vanilla can replace them on its first tick. */
+    public static void beforeControllerUpdate(Object controller) {
+        if (controller == null || failed) return;
+        PzLegacyAccess current = access();
+        if (current == null) return;
+        try {
+            if (current.multiplayerClient()) {
+                Object vehicle = current.vehicle(controller);
+                if (vehicle != null) prepareSession(current, vehicle);
+            }
+        } catch (Throwable error) {
+            fail("control handoff", error);
         }
     }
 
@@ -52,34 +70,14 @@ public final class LegacyHooks {
         }
         try {
             Object vehicle = current.vehicle(controller);
-            if (vehicle == null || !current.hasAuthority(vehicle)) {
-                return;
-            }
-            if (!CarPhysicsImprovedV1Mod.enabled() || !current.hasDriver(vehicle)) {
-                LegacyAxleDriftHooks.stop(vehicle);
-                current.restoreWheelFriction(vehicle);
-                return;
-            }
-            RuntimeState runtime = VEHICLES.computeIfAbsent(vehicle, ignored -> new RuntimeState());
+            if (vehicle == null) return;
+            RuntimeState runtime = prepareSession(current, vehicle);
+            if (runtime == null) return;
             PzLegacyAccess.Snapshot snapshot = current.snapshot(vehicle);
-            if (runtime.scriptIdentity != snapshot.scriptIdentity()) {
-                LegacyAxleDriftHooks.stop(vehicle);
-                runtime.scriptIdentity = snapshot.scriptIdentity();
-                runtime.snapshot = snapshot;
-                runtime.physics = new LegacyPhysics.State();
-                runtime.physics.engineRpm = Math.max(snapshot.spec().idleRpm(), current.engineRpm(vehicle));
-                int nativeGear = current.currentGear(vehicle);
-                runtime.physics.gear = nativeGear == 0 ? 1 : nativeGear;
-                runtime.physics.lastStepGear = runtime.physics.gear;
-                runtime.slide = new LegacySlideDynamics.State();
-                runtime.tireEffects = new LegacyTireEffects.State();
-                runtime.conditionTimer = 0.0;
-                runtime.activeAgeSeconds = 0.0;
-                runtime.observerInitialized = false;
-                runtime.keyDriftMode = false;
-            } else {
-                runtime.snapshot = snapshot;
+            if (runtime.snapshot == null) {
+                runtime.physics.engineRpm = Math.max(snapshot.spec().idleRpm(), runtime.physics.engineRpm);
             }
+            runtime.snapshot = snapshot;
 
             double dt = current.deltaSeconds();
             runtime.activeAgeSeconds += dt;
@@ -170,11 +168,10 @@ public final class LegacyHooks {
                 // delay. Never let old recovery/power commands compete with it.
                 runtime.slide.reset();
             }
-            double referenceMassScale = keyDriftActive ? current.referenceDriftMassScale(vehicle) : 1;
             double keyGrip = LegacyKeyDrift.gripMultiplier(slideTuning.driftIntensity(), keyTuning);
             if (keyDriftMode) {
-                double keyTorque = LegacyKeyDrift.torque(keyDriftActive, controls.steering(),
-                        current.nativeMass(vehicle), referenceMassScale, slideTuning.driftIntensity(), keyTuning);
+                double keyTorque = current.keyDriftTorque(vehicle, keyDriftActive, controls.steering(),
+                        slideTuning.driftIntensity(), keyTuning);
                 slideOutput = LegacyKeyDrift.observation(keyDriftActive, keyTorque, keyTuning.rotation(), keyGrip,
                         motion.longitudinalSpeedMps(), motion.lateralSpeedMps(), nativeAxleSkid.rear());
             } else if (slideForcesSafe) {
@@ -208,11 +205,11 @@ public final class LegacyHooks {
             double tireWheelFrictionScale = LegacyTireCondition.nativeFrictionScale(tireHardwareGrip);
             double appliedWheelFrictionScale = Math.min(slideOutput.wheelFrictionScale(),
                     Math.min(runtime.conditions.terrain().nativeWheelFrictionScale(), tireWheelFrictionScale));
-            if (keyDriftMode) {
-                // Reference order: torque, friction submission, then drive controls.
-                // Only this force owner may submit commands during dedicated drift.
-                current.applySlideForces(vehicle, motion, slideOutput);
-            }
+            // Dedicated yaw is submitted only by the fixed-step hook. A render
+            // frame may contain zero, one or several Bullet steps: do not add
+            // a second torque here, or scale it by the controller frame time.
+            runtime.keyDriftCommand.publish(keyDriftMode ? slideOutput.bulletYawTorque() : 0.0,
+                    System.nanoTime());
             if (keyDriftActive) {
                 current.applyKeyDriftFriction(vehicle, output.tireTraction(), keyGrip);
             } else {
@@ -226,7 +223,7 @@ public final class LegacyHooks {
                     -snapshot.spec().steeringClampRadians(),
                     snapshot.spec().steeringClampRadians());
             current.setGear(vehicle, output.gear());
-            current.apply(controller, vehicle, output, motion, appliedSteering, dt);
+            double appliedEngineForce = current.apply(controller, vehicle, output, motion, appliedSteering, dt);
             if (slideForcesSafe && !keyDriftMode) {
                 current.applySlideForces(vehicle, motion, slideOutput);
             }
@@ -235,7 +232,7 @@ public final class LegacyHooks {
                 runtime.keyDriftAnnounced = true;
                 System.out.println("[CarPhysicsImprovedV1] Dedicated-key drift active on "
                         + snapshot.spec().fullType() + "; yaw=" + Math.round(slideOutput.bulletYawTorque())
-                        + ", refMassScale=" + round(referenceMassScale, 3)
+                        + ", keyYawGain=" + LegacyKeyDrift.YAW_GAIN
                         + ", grip=" + round(keyGrip, 2) + "; native mass unchanged.");
             }
             runtime.output = output;
@@ -276,6 +273,7 @@ public final class LegacyHooks {
                         + " throttle=" + round(output.throttle(), 2)
                         + " force=" + Math.round(output.engineForce())
                         + "/" + Math.round(output.rawDriveForce())
+                        + " forceApplied=" + Math.round(appliedEngineForce)
                         + " brake=" + round(output.brakingForce(), 1)
                         + " traction=" + round(output.tireTraction(), 2)
                         + " terrain=" + runtime.conditions.terrain().profile()
@@ -291,7 +289,7 @@ public final class LegacyHooks {
                         + " steerApplied=" + round(appliedSteering, 3)
                         + " driftKey=" + driftKeyHeld
                         + " driftModel=" + (keyDriftMode ? "key-drift" : "standard")
-                        + " refMassScale=" + round(referenceMassScale, 3)
+                        + " keyYawGain=" + (keyDriftActive ? LegacyKeyDrift.YAW_GAIN : 0.0)
                         + " keyGrip=" + (keyDriftActive ? round(keyGrip, 2) : 1.0)
                         + " side=" + round(motion.lateralSpeedMps(), 2)
                         + " beta=" + round(Math.toDegrees(slideOutput.sideSlipAngleRadians()), 1)
@@ -309,6 +307,8 @@ public final class LegacyHooks {
                         + " tireHardware=" + round(tireHardwareGrip, 2)
                         + " lat=" + Math.round(slideOutput.lateralForce())
                         + " yawCmd=" + Math.round(slideOutput.bulletYawTorque())
+                        + " keyYawStep=" + Math.round(runtime.lastKeyYawStep)
+                        + " keyYawSteps=" + runtime.keyYawSteps
                         + " clutch=" + round(output.clutchKickIntensity(), 2)
                         + " tireFx=" + round(tireEffects.intensity(), 2)
                         + " tracks={" + LegacyTireTrackRenderer.status() + "}"
@@ -321,7 +321,13 @@ public final class LegacyHooks {
         }
     }
 
+    /** After vanilla updateVehiclePhysics, immediately BEFORE the next 0.01 s Bullet step. */
     public static void afterVehiclePhysics() {
+        afterVehiclePhysics(System.nanoTime());
+    }
+
+    // Deterministic monotonic clock for fixed-step and pause/expiry tests.
+    static void afterVehiclePhysics(long now) {
         LegacyAxleDriftHooks.cleanup();
         if (!CarPhysicsImprovedV1Mod.enabled() || failed) {
             return;
@@ -332,20 +338,18 @@ public final class LegacyHooks {
         }
         try {
             synchronized (VEHICLES) {
-                for (Map.Entry<Object, RuntimeState> entry : VEHICLES.entrySet()) {
+                Iterator<Map.Entry<Object, RuntimeState>> entries = VEHICLES.entrySet().iterator();
+                while (entries.hasNext()) {
+                    Map.Entry<Object, RuntimeState> entry = entries.next();
                     Object vehicle = entry.getKey();
                     RuntimeState runtime = entry.getValue();
-                    if (vehicle != null && runtime != null && runtime.keyDriftMode
-                            && (!current.hasAuthority(vehicle) || !current.hasDriver(vehicle)
-                                    || !current.driftKeyHeld(vehicle))) {
-                        current.restoreWheelFriction(vehicle);
-                        runtime.keyDriftMode = false;
-                        runtime.slide.reset();
-                    }
-                    if (vehicle == null || runtime == null || runtime.output == null
-                            || !current.hasAuthority(vehicle)) {
+                    if (!sessionMatches(current, vehicle, runtime)) {
+                        endSession(current, vehicle, runtime);
+                        entries.remove();
                         continue;
                     }
+                    applyKeyDriftPhysicsStep(current, vehicle, runtime, now);
+                    if (runtime.output == null) continue;
                     current.applyBurnoutVisual(
                             vehicle, runtime.output.burnoutSpeedKph(), runtime.lastDelta);
                     if (runtime.slideOutput != null) {
@@ -353,28 +357,141 @@ public final class LegacyHooks {
                     }
                 }
             }
+            current.restoreAbandonedWheelFriction();
         } catch (Throwable error) {
-            fail("wheel visual", error);
+            fail("physics step", error);
         }
     }
 
-    public static void releaseKeyDrifts() {
+    private static void applyKeyDriftPhysicsStep(PzLegacyAccess current, Object vehicle,
+            RuntimeState runtime, long now) throws ReflectiveOperationException {
+        runtime.lastKeyYawStep = 0.0;
+        if (!runtime.keyDriftMode) {
+            runtime.keyDriftCommand.clear();
+            return;
+        }
+        if (!current.driftKeyHeld(vehicle)) {
+            releaseKeyDrift(current, vehicle, runtime);
+            return;
+        }
+        // A held key below the entry threshold still uses key steering, but
+        // must not restore/overwrite ordinary tire/weather grip each substep.
+        if (runtime.slideOutput == null || !runtime.slideOutput.intentionalSlide()) return;
+        double torque = runtime.keyDriftCommand.torqueForPhysicsStep(now);
+        LegacyKeyDrift.Tuning tuning = CarPhysicsImprovedV1Mod.keyDriftTuning();
+        double speed = current.speedKph(vehicle);
+        double verticalSpeed = current.verticalSpeedMps(vehicle);
+        if (torque == 0.0 || !Double.isFinite(speed) || Math.abs(speed) <= tuning.minimumSpeedKph()
+                || !Double.isFinite(verticalSpeed) || Math.abs(verticalSpeed) > 1.25
+                || runtime.activeAgeSeconds < .75 || runtime.collisionCooldownSeconds > 0.0
+                || CarPhysicsImprovedV1Mod.slideTuning().driftIntensity() <= 0.0 || tuning.rotation() <= 0.0) {
+            releaseKeyDrift(current, vehicle, runtime);
+            return;
+        }
+        current.applyKeyDriftTorque(vehicle, torque);
+        runtime.lastKeyYawStep = torque;
+        runtime.keyYawSteps++;
+    }
+
+    private static void releaseKeyDrift(PzLegacyAccess current, Object vehicle, RuntimeState runtime)
+            throws ReflectiveOperationException {
+        runtime.keyDriftCommand.clear();
+        runtime.lastKeyYawStep = 0.0;
+        runtime.keyDriftMode = false;
+        runtime.slide.reset();
+        current.restoreWheelFriction(vehicle);
+    }
+
+    public static void releaseVehicleSessions() {
         PzLegacyAccess current = access;
         if (current == null) return;
         try {
             synchronized (VEHICLES) {
                 for (Map.Entry<Object, RuntimeState> entry : VEHICLES.entrySet()) {
-                    RuntimeState state = entry.getValue();
-                    if (entry.getKey() != null && state.keyDriftMode) {
-                        current.restoreWheelFriction(entry.getKey());
-                        state.keyDriftMode = false;
-                        state.slide.reset();
-                    }
+                    endSession(current, entry.getKey(), entry.getValue());
                 }
+                VEHICLES.clear();
+            }
+            current.restoreAllWheelFriction();
+        } catch (Throwable error) {
+            fail("session restore", error);
+        }
+    }
+
+    /** A network ownership round trip can happen between two physics ticks. */
+    public static void onVehicleAuthorizationChanged(Object vehicle) {
+        PzLegacyAccess current = access;
+        if (current == null || vehicle == null || failed) return;
+        try {
+            RuntimeState runtime = VEHICLES.get(vehicle);
+            if (runtime != null && !sessionMatches(current, vehicle, runtime)) {
+                endSession(current, vehicle, runtime);
+                VEHICLES.remove(vehicle);
             }
         } catch (Throwable error) {
-            fail("key drift restore", error);
+            fail("network ownership", error);
         }
+    }
+
+    // Package-visible so lifecycle tests exercise the real bookkeeping, not a copy.
+    static RuntimeState prepareSession(PzLegacyAccess current, Object vehicle)
+            throws ReflectiveOperationException {
+        RuntimeState runtime = VEHICLES.get(vehicle);
+        Object driver = CarPhysicsImprovedV1Mod.enabled() ? current.controlledDriver(vehicle) : null;
+        if (driver == null) {
+            endSession(current, vehicle, runtime);
+            VEHICLES.remove(vehicle);
+            return null;
+        }
+        Object script = current.script(vehicle);
+        PzLegacyAccess.NetworkAuthority authority = current.networkAuthority(vehicle);
+        int vehicleId = current.vehicleId(vehicle);
+        if (runtime == null || runtime.driver.get() != driver || runtime.scriptIdentity != script
+                || runtime.vehicleId != vehicleId
+                || !Objects.equals(runtime.authority, authority)) {
+            endSession(current, vehicle, runtime);
+            runtime = new RuntimeState();
+            runtime.scriptIdentity = script;
+            runtime.driver = new WeakReference<>(driver);
+            runtime.authority = authority;
+            runtime.vehicleId = vehicleId;
+            CarPhysicsImprovedV1Mod.clearVehicleRuntime(runtime.vehicleId);
+            double rpm = current.engineRpm(vehicle);
+            runtime.physics.engineRpm = Double.isFinite(rpm) ? Math.max(0.0, rpm) : 0.0;
+            int gear = Math.max(-1, Math.min(8, current.currentGear(vehicle)));
+            // Keep the established SP initial gear, but preserve native MP N/R
+            // and seed lastStepGear equally: a handoff is not a clutch kick.
+            runtime.physics.gear = gear == 0 && !current.multiplayerClient() ? 1 : gear;
+            runtime.physics.lastStepGear = runtime.physics.gear;
+            VEHICLES.put(vehicle, runtime);
+        }
+        return runtime;
+    }
+
+    private static boolean sessionMatches(PzLegacyAccess current, Object vehicle, RuntimeState runtime)
+            throws ReflectiveOperationException {
+        if (vehicle == null || runtime == null || !CarPhysicsImprovedV1Mod.enabled()) return false;
+        Object driver = current.controlledDriver(vehicle);
+        return driver != null && runtime.driver.get() == driver
+                && runtime.vehicleId == current.vehicleId(vehicle)
+                && runtime.scriptIdentity == current.script(vehicle)
+                && Objects.equals(runtime.authority, current.networkAuthority(vehicle));
+    }
+
+    private static void endSession(PzLegacyAccess current, Object vehicle, RuntimeState runtime)
+            throws ReflectiveOperationException {
+        if (runtime == null) return;
+        runtime.keyDriftCommand.clear();
+        runtime.lastKeyYawStep = 0.0;
+        if (vehicle != null) {
+            LegacyAxleDriftHooks.stop(vehicle);
+            current.restoreWheelFriction(vehicle);
+        }
+        if (runtime.vehicleId >= 0) {
+            CarPhysicsImprovedV1Mod.clearVehicleRuntime(runtime.vehicleId);
+        }
+        // Never reset native RPM/gear, submit controls or apply a force here:
+        // they may already belong to another client.
     }
 
     static int manualGearAfterShift(int currentGear, int request, int gearCount) {
@@ -393,7 +510,8 @@ public final class LegacyHooks {
         if (vehicle == null || !CarPhysicsImprovedV1Mod.enabled()) {
             return;
         }
-        RuntimeState runtime = VEHICLES.computeIfAbsent(vehicle, ignored -> new RuntimeState());
+        RuntimeState runtime = VEHICLES.get(vehicle);
+        if (runtime == null) return;
         double severity = clamp(Math.abs(Double.isFinite(impactDelta) ? impactDelta : 0.0), 0.0, 30.0) / 30.0;
         runtime.collisionCooldownSeconds = Math.max(runtime.collisionCooldownSeconds,
                 0.35 + severity * 0.25);
@@ -443,6 +561,12 @@ public final class LegacyHooks {
                 System.err.println("[CarPhysicsImprovedV1] wheel-friction restore failed: "
                         + restoreError.getClass().getSimpleName() + ": " + restoreError.getMessage());
             }
+            synchronized (VEHICLES) {
+                for (RuntimeState state : VEHICLES.values()) {
+                    if (state.vehicleId >= 0) CarPhysicsImprovedV1Mod.clearVehicleRuntime(state.vehicleId);
+                }
+                VEHICLES.clear();
+            }
             String message = stage + " failed: " + error.getClass().getSimpleName() + ": " + error.getMessage();
             CarPhysicsImprovedV1Mod.updateStatus(message + "; V1 disabled, vanilla controller retained");
             System.err.println("[CarPhysicsImprovedV1] " + message);
@@ -477,7 +601,13 @@ public final class LegacyHooks {
         return Math.max(minimum, Math.min(maximum, value));
     }
 
-    private static final class RuntimeState {
+    static final class RuntimeState {
+        final LegacyKeyDriftCommand keyDriftCommand = new LegacyKeyDriftCommand();
+        private double lastKeyYawStep;
+        private long keyYawSteps;
+        private WeakReference<Object> driver = new WeakReference<>(null);
+        private PzLegacyAccess.NetworkAuthority authority;
+        private int vehicleId = -1;
         private Object scriptIdentity;
         private PzLegacyAccess.Snapshot snapshot;
         private PzLegacyAccess.ConditionSnapshot conditions;

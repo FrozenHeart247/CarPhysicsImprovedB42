@@ -14,6 +14,7 @@ public final class Patch_WorldSimulation {
 
     @Patch.OnExit
     public static void exit() {
+        // updatePhysic calls this once immediately before EACH Bullet step.
         LegacyHooks.afterVehiclePhysics();
     }
 }

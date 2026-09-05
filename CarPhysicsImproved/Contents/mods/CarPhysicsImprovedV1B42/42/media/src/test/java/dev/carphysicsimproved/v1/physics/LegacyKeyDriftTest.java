@@ -11,7 +11,7 @@ public final class LegacyKeyDriftTest {
         steeringReference();
         frictionReference();
         driveIsolation();
-        System.out.println("LegacyKeyDriftTest: reference gates, mass/inertia compensation, steering, "
+        System.out.println("LegacyKeyDriftTest: reference gates, fixed own-body yaw calibration, steering, "
                 + "grip, release and drivetrain isolation passed");
     }
 
@@ -27,23 +27,31 @@ public final class LegacyKeyDriftTest {
     }
 
     private static void massAndTorque() {
-        for (double greatestMass : new double[] { 500, 750, 1200, 2000, 6000 }) {
-            double scale = Math.min(1, 750 / greatestMass);
-            near(LegacyKeyDrift.referenceMassScale(greatestMass), scale, "WorldSimulation normalization");
-            for (double mass : new double[] { 500, 1200, 2500 }) {
-                for (double steer : new double[] { -1, -.5, .5, 1 }) {
-                    double referenceTorque = steer * 2000 * mass * .001;
-                    double command = LegacyKeyDrift.torque(true, steer, mass, scale, 1, TUNING);
-                    // Inertia is proportional to mass for the same body shape.
-                    near(command / mass, referenceTorque / (mass * scale), "Equivalent angular drive");
-                    near(LegacyKeyDrift.torque(true, -steer, mass, scale, 1, TUNING), -command,
-                            "Immediate countersteer, no sign calibration or delayed torque");
-                    near(LegacyKeyDrift.torque(false, steer, mass, scale, 1, TUNING), 0, "Release has no tail");
+        for (double mass : new double[] { 500, 1041, 1200, 2500, 6000 }) {
+            for (double steer : new double[] { -1, -.5, 0, .5, 1 }) {
+                for (double intensity : new double[] { 0, .5, 1, 2 }) {
+                    for (double rotation : new double[] { 0, 1000, 2000, 3000 }) {
+                        var tuning = new LegacyKeyDrift.Tuning(rotation, .35, 1.5, 20);
+                        double expected = steer * rotation * mass * .001 * 1.96 * intensity;
+                        double command = LegacyKeyDrift.torque(true, steer, mass, intensity, tuning);
+                        near(command, expected, "Fixed calibration with sandbox scaling");
+                        near(command / mass, steer * rotation * .001 * 1.96 * intensity,
+                                "Only own-body mass compensation; no world normalization");
+                        near(LegacyKeyDrift.torque(true, -steer, mass, intensity, tuning), -command,
+                                "Immediate countersteer, no sign calibration or delayed torque");
+                        near(LegacyKeyDrift.torque(false, steer, mass, intensity, tuning), 0,
+                                "Release has no tail");
+                    }
                 }
             }
         }
-        near(LegacyKeyDrift.torque(true, 1, 1200, .5, 0, TUNING), 0, "Global intensity zero");
-        near(LegacyKeyDrift.torque(true, 1, 1200, 0, 1, TUNING), 0, "Invalid mass scale");
+        // Captured accepted run: RaceCar58, rot=2000, refMassScale~.511,
+        // yawCmd~4075. Rounded telemetry is a calibration target, not an exact oracle.
+        double raceCarCommand = LegacyKeyDrift.torque(true, 1, 1041, 1, TUNING);
+        check(Math.abs(raceCarCommand / 4075 - 1) < .002, "Accepted RaceCar command within 0.2 percent");
+        for (double mass : new double[] { 0, -1, Double.NaN, Double.POSITIVE_INFINITY }) {
+            near(LegacyKeyDrift.torque(true, 1, mass, 1, TUNING), 0, "Invalid own mass fails closed");
+        }
     }
 
     private static void steeringReference() {

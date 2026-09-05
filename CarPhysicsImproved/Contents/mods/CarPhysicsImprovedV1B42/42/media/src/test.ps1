@@ -143,6 +143,16 @@ if ($LASTEXITCODE -ne 0) {
     throw "LegacyKeyDriftAdapterTest failed with exit code $LASTEXITCODE"
 }
 
+& $gameJava '-cp' $runtimeClasspath 'dev.carphysicsimproved.v1.runtime.LegacyMultiplayerRuntimeTest'
+if ($LASTEXITCODE -ne 0) {
+    throw "LegacyMultiplayerRuntimeTest failed with exit code $LASTEXITCODE"
+}
+
+& $gameJava '-cp' $runtimeClasspath 'dev.carphysicsimproved.v1.runtime.LegacyKeyDriftStepTest'
+if ($LASTEXITCODE -ne 0) {
+    throw "LegacyKeyDriftStepTest failed with exit code $LASTEXITCODE"
+}
+
 & $gameJava '-cp' $runtimeClasspath 'dev.carphysicsimproved.v1.runtime.LegacyAxleDriftLifecycleTest'
 if ($LASTEXITCODE -ne 0) {
     throw "LegacyAxleDriftLifecycleTest failed with exit code $LASTEXITCODE"
@@ -161,6 +171,12 @@ if ($LASTEXITCODE -ne 0) {
     throw "LegacyAxleDriftPatchTest failed with exit code $LASTEXITCODE"
 }
 
+& $gameJava "-javaagent:$patchTestAgent" '-cp' $runtimeClasspath `
+    'dev.carphysicsimproved.v1.runtime.LegacyMultiplayerPatchTest'
+if ($LASTEXITCODE -ne 0) {
+    throw "LegacyMultiplayerPatchTest failed with exit code $LASTEXITCODE"
+}
+
 & $gameJava '-cp' $runtimeClasspath 'dev.carphysicsimproved.v1.runtime.LuaSyntaxSmokeTest' `
     $clientLua $tireDebugLua $apiLua
 if ($LASTEXITCODE -ne 0) {
@@ -177,4 +193,4 @@ if ($luaCommand) {
     Write-Host 'Lua options mock skipped: standalone lua executable is unavailable (Kahlua syntax checked above).'
 }
 
-Write-Host 'All V1 drivetrain, driver-traits, drift-key, slide, terrain, tire-effects, cabin-weather, tire-renderer, Lua syntax, installed-game ABI and ZB wheel-patch integration tests passed.'
+Write-Host 'All V1 drivetrain, driver-traits, drift-key, slide, terrain, tire-effects, cabin-weather, tire-renderer, Lua syntax, MP lifecycle/speed-limit fixtures, installed-game ABI and ZB patch integration tests passed.'

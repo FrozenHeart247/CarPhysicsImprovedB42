@@ -2,6 +2,11 @@ package dev.carphysicsimproved.v1.physics;
 
 /** Reference-style key drift, independent of the natural/power/handbrake slide state machine. */
 public final class LegacyKeyDrift {
+    // Fixed calibration from the accepted RaceCar58 run (2026-09-04 11:20:17):
+    // its former world-mass scale was ~0.511, or ~1.96 angular gain. Preserve
+    // that response without making steering depend on other loaded vehicles.
+    public static final double YAW_GAIN = 1.96;
+
     private LegacyKeyDrift() { }
 
     public record Tuning(double rotation, double grip, double steeringBoost, double minimumSpeedKph) {
@@ -21,19 +26,13 @@ public final class LegacyKeyDrift {
                 && Math.abs(speedKph) > tuning.minimumSpeedKph() && Math.abs(steering) > .25;
     }
 
-    public static double referenceMassScale(double greatestLoadedMass) {
-        return Math.min(1.0, 750.0 / Math.max(10.0, finite(greatestLoadedMass, 750.0)));
-    }
-
     public static double torque(boolean active, double normalizedSteering, double nativeMass,
-            double referenceMassScale, double intensity, Tuning tuning) {
-        if (!active || !Double.isFinite(nativeMass) || nativeMass <= 0
-                || !Double.isFinite(referenceMassScale) || referenceMassScale <= 0) return 0;
-        // BVD: torque = -nativeInput * rotation * actualMass * .001,
-        // while Bullet mass is actualMass * massScale. Keep vanilla mass and
-        // match torque / inertia through this ratio instead of changing bodies.
+            double intensity, Tuning tuning) {
+        if (!active || !Double.isFinite(nativeMass) || nativeMass <= 0) return 0;
+        // Scale only with this body's native mass; Bullet retains its actual
+        // inertia/shape. No world census, mass rewrites or persistent gain state.
         return clamp(normalizedSteering, -1, 1) * tuning.rotation() * nativeMass * .001
-                / referenceMassScale * clamp(intensity, 0, 2);
+                * YAW_GAIN * clamp(intensity, 0, 2);
     }
 
     public static double gripMultiplier(double intensity, Tuning tuning) {

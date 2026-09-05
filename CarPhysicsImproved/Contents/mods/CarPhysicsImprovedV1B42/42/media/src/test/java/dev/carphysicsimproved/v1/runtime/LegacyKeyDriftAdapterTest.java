@@ -1,22 +1,19 @@
 package dev.carphysicsimproved.v1.runtime;
 
+import dev.carphysicsimproved.v1.physics.LegacyKeyDrift;
 import java.lang.reflect.Field;
-import java.util.List;
 
 /** Exercises production adapter bookkeeping with fake native fields/methods, not a Bullet world. */
 public final class LegacyKeyDriftAdapterTest {
     private LegacyKeyDriftAdapterTest() { }
 
     public static void main(String[] args) throws Exception {
-        PzLegacyAccess access = new PzLegacyAccess(); // First resolve the real installed ABI.
+        PzLegacyAccess access = withoutWorldAccess(); // Resolve real ABI, forbid world-census dependencies.
         replace(access, "vehicleScript", Car.class.getMethod("getScript"));
         replace(access, "scriptWheelFriction", Script.class.getField("wheelFriction"));
         replace(access, "scriptToBullet", Script.class.getMethod("toBullet"));
         replace(access, "vehicleMass", Car.class.getMethod("getMass"));
         replace(access, "vehicleNativeMass", Car.class.getMethod("getMass"));
-        replace(access, "worldInstance", World.class.getField("instance"));
-        replace(access, "worldCell", World.class.getField("currentCell"));
-        replace(access, "cellVehicles", Cell.class.getMethod("getVehicles"));
 
         Car a = new Car(new Script(), 1200);
         a.script.wheelFriction = 3;
@@ -36,22 +33,83 @@ public final class LegacyKeyDriftAdapterTest {
         near(a.script.wheelFriction, .49, "New entry reads current baseline");
         access.restoreAllWheelFriction();
         near(a.script.wheelFriction, 1.4, "Disable/failure cleanup restores baseline");
+        Car sameType = new Car(a.script, 1200);
+        access.applyWheelFrictionScale(a, .2);
+        access.applyWheelFrictionScale(sameType, .5);
+        near(a.script.wheelFriction, .7, "Another owner uses original baseline, not previous reduction");
+        access.restoreWheelFriction(a);
+        near(a.script.wheelFriction, .7, "Old owner cannot undo new owner's reduction");
+        access.restoreWheelFriction(sameType);
+        near(a.script.wheelFriction, 1.4, "New owner restores original baseline");
+
+        access.applyWheelFrictionScale(a, .2);
+        Field states = PzLegacyAccess.class.getDeclaredField("scriptFrictionStates");
+        states.setAccessible(true);
+        Object frictionState = ((java.util.Map<?, ?>)states.get(access)).get(a.script);
+        Field owner = frictionState.getClass().getDeclaredField("owner");
+        owner.setAccessible(true);
+        ((java.lang.ref.Reference<?>)owner.get(frictionState)).clear();
+        access.applyWheelFrictionScale(sameType, .5);
+        near(a.script.wheelFriction, .7, "Collected owner cannot turn reduced friction into a new baseline");
+        ((java.lang.ref.Reference<?>)owner.get(frictionState)).clear();
+        access.restoreAbandonedWheelFriction();
+        near(a.script.wheelFriction, 1.4, "Abandoned friction restored without a controller callback");
+        a.script.failNextSubmission = true;
+        boolean failed = false;
+        try { access.applyWheelFrictionScale(a, .2); }
+        catch (IllegalStateException expected) { failed = true; }
+        check(failed, "Fixture must exercise failed native submission");
+        access.restoreAllWheelFriction();
+        near(a.script.wheelFriction, 1.4, "Failed entry still restores the tracked baseline");
+        near(a.script.nativeFriction, 1.4, "Failed entry restores native definition too");
+        access.applyWheelFrictionScale(a, .2);
+        a.script.failNextSubmission = true;
+        failed = false;
+        try { access.restoreWheelFriction(a); }
+        catch (IllegalStateException expected) { failed = true; }
+        check(failed, "Fixture must exercise failed native restoration");
+        near(a.script.wheelFriction, 1.4, "Java baseline reset before failed native publish");
+        access.restoreAllWheelFriction();
+        near(a.script.nativeFriction, 1.4, "Retry republishes even when Java already has baseline");
         Car b = new Car(new Script(), 2000);
-        World.instance.currentCell = new Cell(List.of(a, b));
-        near(access.referenceDriftMassScale(a), .375, "Read maximum loaded mass like reference");
-        int reads = b.reads;
-        for (int i = 0; i < 20; i++) access.referenceDriftMassScale(a);
-        check(b.reads == reads, "Do not rescan vehicles on each controller tick");
+        var tuning = LegacyKeyDrift.Tuning.defaults();
+        double originalTorque = access.keyDriftTorque(a, true, 1, 1, tuning);
+        near(originalTorque, 4704, "Fixed gain applied to current car only");
+        for (int i = 0; i < 20; i++) {
+            near(access.keyDriftTorque(a, true, 1, 1, tuning), originalTorque, "No accumulated gain");
+        }
+        check(b.reads == 0, "Other vehicle masses are never requested");
         b.mass = 6000;
-        Field timer = PzLegacyAccess.class.getDeclaredField("massScaleReadAt");
-        timer.setAccessible(true);
-        timer.setLong(access, 0);
-        near(access.referenceDriftMassScale(a), .125, "Refresh normalization after cache expiry");
-        World.instance.currentCell = new Cell(List.of(a));
-        near(access.referenceDriftMassScale(a), .625, "World change invalidates cache immediately");
+        near(access.keyDriftTorque(a, true, 1, 1, tuning), originalTorque, "Other car weight cannot change yaw");
+        near(access.keyDriftTorque(b, true, 1, 1, tuning), 23520, "Each car uses its own body mass");
+        near(access.keyDriftTorque(a, true, 1, 1, tuning), originalTorque, "Switching cars cannot leak gain");
+        PzLegacyAccess freshAccess = withoutWorldAccess();
+        replace(freshAccess, "vehicleNativeMass", Car.class.getMethod("getMass"));
+        near(freshAccess.keyDriftTorque(a, true, 1, 1, tuning), originalTorque, "Fresh session has identical yaw");
+        near(access.keyDriftTorque(a, true, -1, 1, tuning), -originalTorque, "Immediate countersteer");
+        near(access.keyDriftTorque(null, false, 1, 1, tuning), 0, "Inactive drift does not even read a body");
         check(a.mass == 1200 && b.mass == 6000, "Adapter must never rewrite vehicle masses");
+        a.mass = 1500;
+        near(access.keyDriftTorque(a, true, 1, 1, tuning), 5880, "Actual own-body mass change is still respected");
         System.out.println("LegacyKeyDriftAdapterTest: actual friction adapter, fresh restoration, "
-                + "capped/multiplied grip and read-only cached mass census passed");
+                + "capped/multiplied grip and world-independent own-body yaw passed");
+    }
+
+    private static PzLegacyAccess withoutWorldAccess() throws Exception {
+        Thread thread = Thread.currentThread();
+        ClassLoader original = thread.getContextClassLoader();
+        ClassLoader noWorld = new ClassLoader(original) {
+            @Override
+            protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+                if (name.equals("zombie.iso.IsoWorld") || name.equals("zombie.iso.IsoCell")) {
+                    throw new AssertionError("Drift adapter must not resolve world/cell access: " + name);
+                }
+                return super.loadClass(name, resolve);
+            }
+        };
+        thread.setContextClassLoader(noWorld);
+        try { return new PzLegacyAccess(); }
+        finally { thread.setContextClassLoader(original); }
     }
 
     private static void replace(PzLegacyAccess access, String name, Object value) throws Exception {
@@ -62,8 +120,17 @@ public final class LegacyKeyDriftAdapterTest {
 
     public static final class Script {
         public float wheelFriction = 1.8f;
+        public float nativeFriction = 1.8f;
+        public boolean failNextSubmission;
         public int submissions;
-        public void toBullet() { submissions++; }
+        public void toBullet() {
+            if (failNextSubmission) {
+                failNextSubmission = false;
+                throw new IllegalStateException("test native publication failure");
+            }
+            submissions++;
+            nativeFriction = wheelFriction;
+        }
     }
     public static final class Car {
         private final Script script;
@@ -72,15 +139,6 @@ public final class LegacyKeyDriftAdapterTest {
         Car(Script script, double mass) { this.script = script; this.mass = mass; }
         public Script getScript() { return script; }
         public double getMass() { reads++; return mass; }
-    }
-    public static final class World {
-        public static final World instance = new World();
-        public Cell currentCell;
-    }
-    public static final class Cell {
-        private final List<Car> cars;
-        Cell(List<Car> cars) { this.cars = cars; }
-        public List<Car> getVehicles() { return cars; }
     }
     private static void near(double actual, double expected, String message) {
         check(Double.isFinite(actual) && Math.abs(actual - expected) < 1e-6, message + ": " + actual + " / " + expected);

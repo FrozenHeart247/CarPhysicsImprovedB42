@@ -2,6 +2,7 @@ package dev.carphysicsimproved.v1.runtime;
 
 import dev.carphysicsimproved.v1.physics.LegacyPhysics;
 import dev.carphysicsimproved.v1.physics.LegacyDriverTraits;
+import dev.carphysicsimproved.v1.physics.LegacyKeyDrift;
 import dev.carphysicsimproved.v1.physics.LegacySlideDynamics;
 import dev.carphysicsimproved.v1.physics.LegacyTerrainDynamics;
 import dev.carphysicsimproved.v1.physics.LegacyTireCondition;
@@ -31,6 +32,12 @@ final class PzLegacyAccess {
     private final Field controlsSteering;
     private final Field gameClientClient;
     private final Field gameServerServer;
+    private final Field serverOptionsInstance;
+    private final Field serverSpeedLimit;
+    private final Method serverSpeedLimitValue;
+    private final Field vehicleAuthorization;
+    private final Field vehicleAuthorizationPlayer;
+    private final Method playerLocal;
     private final Object sundayDriverTrait;
     private final Object speedDemonTrait;
 
@@ -48,12 +55,6 @@ final class PzLegacyAccess {
     private final Method vehiclePart;
     private final Method vehicleMass;
     private final Method vehicleNativeMass;
-    private final Field worldInstance;
-    private final Field worldCell;
-    private final Method cellVehicles;
-    private Object massScaleCell;
-    private long massScaleReadAt;
-    private double greatestLoadedMass = 750;
     private final Method vehicleEngineRunning;
     private final Method vehicleEngineSpeed;
     private final Method vehicleSetEngineSpeed;
@@ -151,6 +152,13 @@ final class PzLegacyAccess {
         controlsSteering = field(controlsClass, "steering");
         gameClientClient = field(clientClass, "client");
         gameServerServer = field(serverClass, "server");
+        Class<?> serverOptionsClass = Class.forName("zombie.network.ServerOptions", false, loader);
+        serverOptionsInstance = field(serverOptionsClass, "instance");
+        serverSpeedLimit = field(serverOptionsClass, "speedLimit");
+        serverSpeedLimitValue = methodInHierarchy(serverSpeedLimit.getType(), "getValue");
+        vehicleAuthorization = field(vehicleClass, "netPlayerAuthorization");
+        vehicleAuthorizationPlayer = field(vehicleClass, "netPlayerId");
+        playerLocal = methodInHierarchy(Class.forName("zombie.characters.IsoPlayer", false, loader), "isLocalPlayer");
         sundayDriverTrait = field(characterTraitClass, "SUNDAY_DRIVER").get(null);
         speedDemonTrait = field(characterTraitClass, "SPEED_DEMON").get(null);
 
@@ -167,11 +175,6 @@ final class PzLegacyAccess {
         vehiclePart = methodInHierarchy(vehicleClass, "getPartById", String.class);
         vehicleMass = method(vehicleClass, "getMass");
         vehicleNativeMass = method(vehicleClass, "getFudgedMass");
-        Class<?> worldClass = Class.forName("zombie.iso.IsoWorld", false, loader);
-        Class<?> cellClass = Class.forName("zombie.iso.IsoCell", false, loader);
-        worldInstance = field(worldClass, "instance");
-        worldCell = field(worldClass, "currentCell");
-        cellVehicles = method(cellClass, "getVehicles");
         vehicleEngineRunning = method(vehicleClass, "isEngineRunning");
         vehicleEngineSpeed = method(vehicleClass, "getEngineSpeed");
         vehicleSetEngineSpeed = method(vehicleClass, "setEngineSpeed", double.class);
@@ -242,6 +245,33 @@ final class PzLegacyAccess {
 
     boolean hasDriver(Object vehicle) throws ReflectiveOperationException {
         return invoke(vehicleDriver, vehicle) != null;
+    }
+
+    boolean multiplayerClient() throws IllegalAccessException {
+        return gameClientClient.getBoolean(null) && !gameServerServer.getBoolean(null);
+    }
+
+    Object controlledDriver(Object vehicle) throws ReflectiveOperationException {
+        if (!hasAuthority(vehicle)) return null;
+        Object driver = invoke(vehicleDriver, vehicle);
+        if (driver == null || (Boolean) invoke(characterDead, driver)) return null;
+        // LocalCollide can grant physics ownership without granting ownership
+        // of a remote driver's inputs. Never drive that car with our controls.
+        if (multiplayerClient() && (!playerLocal.getDeclaringClass().isInstance(driver)
+                || !(Boolean) invoke(playerLocal, driver))) return null;
+        return driver;
+    }
+
+    NetworkAuthority networkAuthority(Object vehicle) throws IllegalAccessException {
+        return multiplayerClient()
+                ? new NetworkAuthority(vehicleAuthorization.get(vehicle), vehicleAuthorizationPlayer.getShort(vehicle))
+                : null;
+    }
+
+    double serverSpeedLimitKph() throws ReflectiveOperationException {
+        if (!multiplayerClient()) return Double.POSITIVE_INFINITY;
+        Object option = serverSpeedLimit.get(serverOptionsInstance.get(null));
+        return ((Number) invoke(serverSpeedLimitValue, option)).doubleValue();
     }
 
     LegacyDriverTraits.Modifiers driverModifiers(Object vehicle) throws ReflectiveOperationException {
@@ -485,31 +515,10 @@ final class PzLegacyAccess {
         return ((Number) invoke(vehicleNativeMass, vehicle)).doubleValue();
     }
 
-    double referenceDriftMassScale(Object vehicle) throws ReflectiveOperationException {
-        double selfMass = ((Number) invoke(vehicleMass, vehicle)).doubleValue();
-        Object world = worldInstance.get(null);
-        Object cell = world == null ? null : worldCell.get(world);
-        long now = System.nanoTime();
-        // Read-only census, at most 4 Hz, only requested during key drift. BVD
-        // scans this same collection each tick and changes every Bullet body.
-        if (cell != massScaleCell || now - massScaleReadAt > 250_000_000L) {
-            double maximum = 10;
-            if (cell != null) {
-                Object vehicles = invoke(cellVehicles, cell);
-                if (vehicles instanceof Iterable<?> loaded) {
-                    for (Object other : loaded) {
-                        if (other == null) continue;
-                        double mass = ((Number) invoke(vehicleMass, other)).doubleValue();
-                        if (Double.isFinite(mass)) maximum = Math.max(maximum, mass);
-                    }
-                }
-            }
-            greatestLoadedMass = maximum;
-            massScaleCell = cell;
-            massScaleReadAt = now;
-        }
-        return dev.carphysicsimproved.v1.physics.LegacyKeyDrift.referenceMassScale(
-                Math.max(selfMass, greatestLoadedMass));
+    double keyDriftTorque(Object vehicle, boolean active, double steering, double intensity,
+            LegacyKeyDrift.Tuning tuning) throws ReflectiveOperationException {
+        if (!active) return 0;
+        return LegacyKeyDrift.torque(true, steering, nativeMass(vehicle), intensity, tuning);
     }
 
     Motion motion(Object vehicle) throws ReflectiveOperationException {
@@ -547,6 +556,16 @@ final class PzLegacyAccess {
         return ((Number) invoke(vehicleSpeedKph, vehicle)).doubleValue();
     }
 
+    double verticalSpeedMps(Object vehicle) throws IllegalAccessException {
+        return vectorY.getFloat(vehicleVelocity.get(vehicle));
+    }
+
+    void applyKeyDriftTorque(Object vehicle, double torque) throws ReflectiveOperationException {
+        if (Double.isFinite(torque) && torque != 0.0) {
+            invoke(bulletTorque, null, vehicleId(vehicle), 0.0f, (float) torque, 0.0f);
+        }
+    }
+
     int currentGear(Object vehicle) throws ReflectiveOperationException {
         return ((Number) invoke(vehicleTransmission, vehicle)).intValue();
     }
@@ -558,10 +577,11 @@ final class PzLegacyAccess {
         vehicleTransmissionState.set(vehicle, transmission);
     }
 
-    void apply(Object controller, Object vehicle, LegacyPhysics.Output output, Motion motion,
+    double apply(Object controller, Object vehicle, LegacyPhysics.Output output, Motion motion,
             double steeringRadians, double deltaSeconds)
             throws ReflectiveOperationException {
-        float engine = (float) output.engineForce();
+        float engine = (float) LegacyServerSpeedLimit.limitForce(
+                output.engineForce(), speedKph(vehicle), serverSpeedLimitKph());
         float braking = (float) output.brakingForce();
         float steering = (float) steeringRadians;
         controllerEngineForce.setFloat(controller, engine);
@@ -580,6 +600,7 @@ final class PzLegacyAccess {
                     (float) (motion.velocityY * drag),
                     (float) (motion.velocityZ * drag));
         }
+        return engine;
     }
 
     void applySlideForces(Object vehicle, Motion motion, LegacySlideDynamics.Output output)
@@ -633,7 +654,7 @@ final class PzLegacyAccess {
                 scriptFrictionStates.put(script, state);
             } else {
                 Object owner = state.owner.get();
-                if (state.reduced && owner != null && owner != vehicle) {
+                if (state.reduced && owner != vehicle) {
                     restoreScriptFriction(script, state);
                 }
                 if (!state.reduced) {
@@ -642,21 +663,36 @@ final class PzLegacyAccess {
             }
 
             float target = (float) Math.min(state.baseValue * scale, ceiling);
-            if (!state.reduced || Math.abs(scriptWheelFriction.getFloat(script) - target) > 1.0E-4f) {
+            boolean changed = !state.reduced || Math.abs(scriptWheelFriction.getFloat(script) - target) > 1.0E-4f;
+            // Register restoration BEFORE submitting: a failing native call
+            // must not leave an untracked, already modified Java script value.
+            state.owner = new WeakReference<>(vehicle);
+            state.reduced = true;
+            if (changed) {
                 scriptWheelFriction.setFloat(script, target);
                 invoke(scriptToBullet, script);
             }
-            state.owner = new WeakReference<>(vehicle);
-            state.reduced = true;
         }
     }
 
     void restoreWheelFriction(Object vehicle) throws ReflectiveOperationException {
-        Object script = script(vehicle);
         synchronized (scriptFrictionStates) {
-            ScriptFrictionState state = scriptFrictionStates.get(script);
-            if (state != null && state.owner.get() == vehicle) {
-                restoreScriptFriction(script, state);
+            // The vehicle may already have changed scripts or left the world.
+            // Restore the script actually owned by this vehicle, not its new one.
+            for (Map.Entry<Object, ScriptFrictionState> entry : scriptFrictionStates.entrySet()) {
+                if (entry.getValue().owner.get() == vehicle) {
+                    restoreScriptFriction(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+    }
+
+    void restoreAbandonedWheelFriction() throws ReflectiveOperationException {
+        synchronized (scriptFrictionStates) {
+            for (Map.Entry<Object, ScriptFrictionState> entry : scriptFrictionStates.entrySet()) {
+                if (entry.getValue().reduced && entry.getValue().owner.get() == null) {
+                    restoreScriptFriction(entry.getKey(), entry.getValue());
+                }
             }
         }
     }
@@ -673,7 +709,9 @@ final class PzLegacyAccess {
 
     private void restoreScriptFriction(Object script, ScriptFrictionState state)
             throws ReflectiveOperationException {
-        if (state.reduced && Math.abs(scriptWheelFriction.getFloat(script) - state.baseValue) > 1.0E-4f) {
+        if (state.reduced) {
+            // Also retry publication after an earlier native restore failed,
+            // even if the Java field was already reset to its baseline.
             scriptWheelFriction.setFloat(script, state.baseValue);
             invoke(scriptToBullet, script);
         }
@@ -816,6 +854,8 @@ final class PzLegacyAccess {
 
     record Snapshot(Object scriptIdentity, LegacyPhysics.Spec spec, LegacySlideDynamics.Spec slideSpec) {
     }
+
+    record NetworkAuthority(Object authorization, short playerId) { }
 
     record ConditionSnapshot(LegacyPhysics.Conditions longitudinal, LegacySlideDynamics.AxleGrip lateral,
             LegacyTerrainDynamics.Output terrain) {

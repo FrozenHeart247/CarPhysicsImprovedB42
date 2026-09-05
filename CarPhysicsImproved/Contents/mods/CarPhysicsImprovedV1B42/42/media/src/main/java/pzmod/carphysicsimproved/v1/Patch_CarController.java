@@ -28,6 +28,11 @@ public final class Patch_CarController {
         private Update() {
         }
 
+        @Patch.OnEnter
+        public static void enter(@Patch.This Object controller) {
+            LegacyHooks.beforeControllerUpdate(controller);
+        }
+
         @Patch.OnExit(onThrowable = Throwable.class)
         public static void exit(@Patch.This Object controller) {
             LegacyHooks.afterControllerUpdate(controller);

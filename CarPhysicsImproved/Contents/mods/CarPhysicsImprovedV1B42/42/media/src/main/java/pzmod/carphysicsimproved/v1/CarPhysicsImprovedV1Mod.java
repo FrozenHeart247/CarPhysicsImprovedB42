@@ -50,7 +50,7 @@ public final class CarPhysicsImprovedV1Mod {
         enabled = value;
         if (!value) {
             LegacyAxleDriftHooks.restoreAll();
-            dev.carphysicsimproved.v1.runtime.LegacyHooks.releaseKeyDrifts();
+            dev.carphysicsimproved.v1.runtime.LegacyHooks.releaseVehicleSessions();
         }
     }
 
@@ -246,6 +246,13 @@ public final class CarPhysicsImprovedV1Mod {
     public static int consumeShiftRequest(int vehicleId) {
         Integer request = SHIFT_REQUESTS.remove(vehicleId);
         return request == null ? 0 : Math.max(-1, Math.min(1, request));
+    }
+
+    /** Discard local commands/effects when a driving session ends. */
+    public static void clearVehicleRuntime(int vehicleId) {
+        SHIFT_REQUESTS.remove(vehicleId);
+        BURNOUT.remove(vehicleId);
+        SKID.remove(vehicleId);
     }
 
     public static void updateEffects(int vehicleId, double burnoutAmount, double skidAmount) {
